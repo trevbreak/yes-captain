@@ -44,7 +44,7 @@ func play(name: String, pitch: float = 1.0, vol: float = 0.0) -> void:
 func speak(text: String) -> void:
 	## IGOR talks. System TTS if available (slow, low, flat), otherwise the chime only.
 	play("chime")
-	if not tts_on or not enabled:
+	if not tts_on or not enabled or not DisplayServer.has_feature(DisplayServer.FEATURE_TEXT_TO_SPEECH):
 		return
 	if DisplayServer.get_name() == "headless":
 		return
@@ -52,11 +52,16 @@ func speak(text: String) -> void:
 	if voices.is_empty():
 		return
 	if tts_voice == "":
+		# IGOR prefers a robot-ish voice: Fred if the system has it, then a few flat ones
 		tts_voice = voices[0]
-		for v in voices:
-			var lv: String = str(v).to_lower()
-			if "daniel" in lv or "fred" in lv or "alex" in lv or "ralph" in lv or "lee" in lv:
-				tts_voice = v
+		var found: bool = false
+		for want in ["fred", "ralph", "daniel", "alex", "lee"]:
+			for v in voices:
+				if want in str(v).to_lower():
+					tts_voice = v
+					found = true
+					break
+			if found:
 				break
 	DisplayServer.tts_stop()
 	DisplayServer.tts_speak(text, tts_voice, 60, 0.55, 0.85)

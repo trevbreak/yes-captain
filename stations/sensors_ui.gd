@@ -1,133 +1,190 @@
 class_name SensorsUI
-extends StationUI
+extends Station
+## Sensors: the radar. Click a blip, hold SCAN, and the captain finds out what it is.
+## Later: the comms dial (mission 5) and deep scans for weak spots (mission 6).
 
 var radar: Radar
-var sel_lbl: Label
-var scan_btn: Button
-var scan_bar: BarGauge
-var freq_lever: Lever
-var q_bar: BarGauge
-var hail_lbl: Label
-var view_btns: Dictionary = {}
-var ping_btn: SafetyBtn
-var iscan_btn: Button
-var beacon_btn: Button
-var info_lbl: Label
-var selected: int = -1
+var scan_btn: BigButton
+var sel_card: Label
+var sel_sub: Label
+var comms_box: VBoxContainer
+var knob: Knob
+var sig_bar: Gauges.Bar
+var msg_lbl: Label
+var from_lbl: Label
+var _sel: int = -1
+var _blips: Array = []
+var _freq: float = 0.5
+var _turn: float = 0.0
+
+func _init() -> void:
+	super("sensors")
 
 func build() -> void:
-	var h: HBoxContainer = UIK.hbox(10)
-	add_body(h)
-	var rw: Array = UIK.window("RADAR  (north is up · click a contact)", "sensors", "sensors", 8)
-	h.add_child(rw[0])
 	radar = Radar.new()
-	radar.custom_minimum_size = Vector2(420, 420)
-	radar.picked.connect(func(id: int): selected = id)
-	(rw[1] as VBoxContainer).add_child(radar)
-	info_lbl = UIK.label("", 13, K.pal("ink_soft"))
-	(rw[1] as VBoxContainer).add_child(info_lbl)
-	var right: VBoxContainer = UIK.vbox(8)
-	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	h.add_child(right)
-	var cw: Array = UIK.window("CONTACT", "blue", "map", 8)
-	right.add_child(cw[0])
-	sel_lbl = UIK.wrapped(UIK.label("Click a contact on the radar.", 15))
-	(cw[1] as VBoxContainer).add_child(sel_lbl)
-	var sr: HBoxContainer = UIK.hbox(6)
-	(cw[1] as VBoxContainer).add_child(sr)
-	scan_btn = UIK.hold_btn("Hold to scan", "sensors", func(on: bool): send("scan", {"id": selected, "on": on and selected >= 0}), "sensors")
-	scan_btn.disabled = readonly
-	sr.add_child(scan_btn)
-	scan_bar = BarGauge.new("", 1.0, K.pal("sensors"))
-	scan_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scan_bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	sr.add_child(scan_bar)
-	var mw: Array = UIK.window("COMMS  (tune until it locks: it drifts!)", "purple", "share", 8)
-	right.add_child(mw[0])
-	freq_lever = Lever.new("frequency", 0.0, 1.0, K.pal("purple"), true)
-	freq_lever.snap_zero = false
-	freq_lever.step = 0.005
-	freq_lever.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	freq_lever.changed.connect(func(v: float): send("set_freq", v))
-	(mw[1] as VBoxContainer).add_child(freq_lever)
-	q_bar = BarGauge.new("signal", 1.0, K.pal("yellow"))
-	q_bar.band_lo = 0.87
-	q_bar.band_hi = 1.0
-	(mw[1] as VBoxContainer).add_child(q_bar)
-	hail_lbl = UIK.wrapped(UIK.label("", 14))
-	(mw[1] as VBoxContainer).add_child(hail_lbl)
-	var vw: Array = UIK.window("CAPTAIN'S VIEWSCREEN", "navy", "captain", 8)
-	right.add_child(vw[0])
-	var vr: HBoxContainer = UIK.hbox(4)
-	(vw[1] as VBoxContainer).add_child(vr)
-	for pair in [["fwd", "Fwd"], ["aft", "Aft"], ["port", "Port"], ["stbd", "Stbd"], ["target", "Lock"]]:
-		var key: String = pair[0]
-		var b: Button = UIK.toggle_btn(pair[1], "neutral", func(_on: bool): send("view", key))
-		b.add_theme_font_size_override("font_size", 14)
-		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		b.disabled = readonly
-		vr.add_child(b)
-		view_btns[key] = b
-	var ar: HBoxContainer = UIK.hbox(6)
-	right.add_child(ar)
-	ping_btn = SafetyBtn.new("ACTIVE PING", "red")
-	ping_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	ping_btn.fired.connect(func(): send("ping", true))
-	ar.add_child(ping_btn)
-	iscan_btn = UIK.btn("Internal scan", "blue", func(): send("iscan", true), "dc")
-	iscan_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	iscan_btn.disabled = readonly
-	ar.add_child(iscan_btn)
-	beacon_btn = UIK.btn("Deploy decoy beacon", "pink", func(): send("beacon", true), "pudding")
-	beacon_btn.disabled = readonly
-	right.add_child(beacon_btn)
+	radar.custom_minimum_size = Vector2(450, 450)
+	radar.picked.connect(func(id: int):
+		_sel = id
+		send("select", id))
+	hero.add_child(radar)
+	var col: VBoxContainer = UIK.vbox(10)
+	col.alignment = BoxContainer.ALIGNMENT_CENTER
+	col.custom_minimum_size = Vector2(230, 0)
+	hero.add_child(col)
+	var card: PanelContainer = UIK.panel("panel_small", [4, 2, 4, 2])
+	col.add_child(card)
+	var cv: VBoxContainer = UIK.vbox(0)
+	card.add_child(cv)
+	cv.add_child(UIK.head("SELECTED", 16, K.pal("ink_soft")))
+	sel_card = UIK.head("Nothing", 24)
+	cv.add_child(sel_card)
+	sel_sub = UIK.para("Click a blip on the radar.", 18)
+	cv.add_child(sel_sub)
+	scan_btn = BigButton.new("SCAN", "green", true, 140)
+	scan_btn.key_hint = "Space"
+	scan_btn.held.connect(func(on: bool): send("scan", on))
+	col.add_child(UIK.center(scan_btn))
+	col.add_child(UIK.btn("Next blip", "cream", _cycle, "", 18))
+	comms_box = side_window("COMMS", "teal", "speaker")
+	comms_box.add_child(UIK.para("Turn the dial until the signal locks, then READ THE MESSAGE OUT LOUD.", 18))
+	var kr: HBoxContainer = UIK.hbox(8)
+	comms_box.add_child(kr)
+	knob = Knob.new()
+	knob.custom_minimum_size = Vector2(120, 120)
+	knob.changed.connect(func(v: float):
+		_freq = v
+		send("freq", v))
+	kr.add_child(knob)
+	var kv: VBoxContainer = UIK.vbox(4)
+	kv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	kr.add_child(kv)
+	from_lbl = UIK.head("No signal", 18)
+	kv.add_child(from_lbl)
+	sig_bar = Gauges.Bar.new("teal", 30)
+	sig_bar.marker = 0.8
+	kv.add_child(sig_bar)
+	var mp: PanelContainer = UIK.panel("well", [2, 2, 2, 2])
+	comms_box.add_child(mp)
+	msg_lbl = UIK.para("...static...", 21)
+	mp.add_child(msg_lbl)
+	keys_lbl.text = "Click a blip (or TAB), then hold SPACE to scan.   Q / E turn the comms dial."
 
-func refresh() -> void:
-	radar.contacts = view.get("contacts", [])
-	radar.incoming = view.get("incoming", [])
-	radar.tele = view.get("tele", [])
-	radar.heading = float(view.get("heading", -PI / 2.0))
-	radar.range_m = float(view.get("range", 500.0))
-	radar.mirror = bool(view.get("mirror", false))
-	radar.ship_pos = view.get("pos", Vector2.ZERO)
-	radar.locked = int(view.get("lock", -1))
-	radar.ping_t = float(view.get("ping_t", 0.0))
-	radar.rings = view.get("enc", {}).get("rings", [])
-	radar.dock = view.get("enc", {}).get("dock", {})
-	radar.selected = selected
-	var vd: String = str(view.get("view", "fwd"))
-	radar.view_ang = float(view.get("heading", 0.0)) + {"fwd": 0.0, "aft": PI, "port": -PI / 2.0, "stbd": PI / 2.0, "target": 0.0}.get(vd, 0.0)
-	for k in view_btns.keys():
-		view_btns[k].set_pressed_no_signal(k == vd)
-	var found: Dictionary = {}
-	for ct in radar.contacts:
-		if int(ct.id) == selected:
-			found = ct
-	if found.is_empty():
-		sel_lbl.text = "Click a contact on the radar to select it."
-		scan_btn.disabled = true
+func _cycle() -> void:
+	if _blips.is_empty():
+		return
+	var ids: Array = []
+	for b in _blips:
+		ids.append(int(b.id))
+	var i: int = ids.find(_sel)
+	_sel = ids[(i + 1) % ids.size()]
+	send("select", _sel)
+
+func _process(dt: float) -> void:
+	if not is_visible_in_tree() or not feat("comms"):
+		return
+	var d: float = (1.0 if held(KEY_E) else 0.0) - (1.0 if held(KEY_Q) else 0.0)
+	if d != 0.0:
+		_freq = clampf(_freq + d * 0.25 * dt, 0.0, 1.0)
+		knob.set_value(_freq)
+		_turn += dt
+		if _turn > 0.06:
+			_turn = 0.0
+			send("freq", _freq)
+
+func refresh(v: Dictionary, _com: Dictionary) -> void:
+	radar.view = v
+	_blips = v.get("blips", [])
+	_sel = int(v.get("selected", -1))
+	radar.selected = _sel
+	var b: Dictionary = {}
+	for x in _blips:
+		if int(x.id) == _sel:
+			b = x
+	if b.is_empty():
+		sel_card.text = "Nothing"
+		sel_sub.text = "Click a blip on the radar." if bool(v.get("ok", true)) else "Sensors are broken. Ask the Engineer!"
 	else:
-		var txt: String = "%s  ·  %dm" % [found.name, int((found.p as Vector2).length())]
-		if bool(found.scanned):
-			txt += "\nScanned %ds ago. Hull %d%%. Weapons can lock it." % [int(found.age), int(found.get("hp", 100.0))]
+		sel_card.text = str(b.name) if bool(b.scanned) else "Unknown!"
+		var bits: String = "%dm away. " % int(b.dist)
+		if not bool(b.scanned):
+			bits += "Hold SCAN to find out what it is."
+		elif str(b.kind) == "cruiser" and feat("weakspot") and not bool(b.weak):
+			bits += "Scan AGAIN to find its weak spot."
+		elif bool(b.weak):
+			bits += "Weak spot: the vent at the BACK."
 		else:
-			txt += "\nNot scanned yet: Weapons can't lock it."
-		sel_lbl.text = txt
-		scan_btn.disabled = readonly or str(found.kind) in ["waypoint", "mine"]
-	var sc: Dictionary = view.get("scan", {})
-	scan_bar.value = float(sc.get("progress", 0.0)) if int(sc.get("target", -1)) == selected else 0.0
-	if not freq_lever.dragging:
-		freq_lever.set_value(float(view.get("freq", 0.5)))
-	var hail: Dictionary = view.get("hail", {})
-	if hail.is_empty():
-		q_bar.value = 0.0
-		hail_lbl.text = "No incoming hail. Just static."
+			bits += "Hostile!" if bool(b.hostile) else "Not a threat."
+		sel_sub.text = bits
+	scan_btn.set_progress(float(v.get("prog", 0.0)) if bool(v.get("scanning", false)) else -1.0)
+	scan_btn.set_disabled(not bool(v.get("ok", true)))
+	comms_box.get_parent().get_parent().visible = feat("comms")
+	var cm: Dictionary = v.get("comms", {})
+	if not knob._drag and not (held(KEY_Q) or held(KEY_E)):
+		_freq = float(v.get("freq", 0.5))
+		knob.set_value(_freq)
+	if cm.is_empty():
+		from_lbl.text = "No signal"
+		sig_bar.set_value(0.0, "")
+		msg_lbl.text = "...static..."
 	else:
-		q_bar.value = float(hail.q)
-		hail_lbl.text = "INCOMING from %s! %s" % [hail.from, "Locked: relaying to the captain..." if bool(hail.tuned) else "Slide the dial until the bar fills."]
-	ping_btn.disabled = float(view.get("ping_cd", 0.0)) > 0.0 or readonly
-	iscan_btn.disabled = float(view.get("iscan_cd", 0.0)) > 0.0 or readonly
-	iscan_btn.text = "Internal scan" if float(view.get("reveal_t", 0.0)) <= 0.0 else "Scanning (%ds)" % int(view.reveal_t)
-	beacon_btn.text = "Deploy decoy beacon (%d)" % int(view.get("beacons", 0))
-	beacon_btn.disabled = int(view.get("beacons", 0)) <= 0 or readonly
-	info_lbl.text = "Range %dm (more power to Sensors = more range)%s" % [int(radar.range_m), "   ·   INCOMING FIRE!" if not radar.incoming.is_empty() else ""]
+		from_lbl.text = "Hail: " + str(cm.from)
+		var sig: float = float(cm.signal)
+		sig_bar.set_value(sig, "LOCKED" if bool(cm.heard) else "%d%%" % int(sig * 100.0))
+		sig_bar.set_colour(UIK.c("green") if sig > 0.8 else UIK.c("teal"))
+		msg_lbl.text = ("\"%s\"" % str(cm.text)) if bool(cm.heard) else ("...crackle... " + "▮".repeat(int(sig * 10.0)))
+
+func on_key(k: Key, down: bool) -> bool:
+	match k:
+		KEY_SPACE:
+			scan_btn.press_key(down)
+			return true
+		KEY_TAB:
+			if down:
+				_cycle()
+			return true
+		KEY_Q, KEY_E:
+			if not down and feat("comms"):
+				send("freq", _freq)
+			return feat("comms")
+	return false
+
+class Knob extends Control:
+	## a brass tuning knob: drag round to turn. value 0..1 over 270 degrees.
+	signal changed(v: float)
+	var value: float = 0.5
+	var _drag: bool = false
+	var _last: float = 0.0
+	var _tex: Texture2D
+
+	func _ready() -> void:
+		mouse_default_cursor_shape = Control.CURSOR_DRAG
+		_tex = Art.tex("prop_knob", 1.2)
+
+	func set_value(v: float, emit: bool = false) -> void:
+		v = clampf(v, 0.0, 1.0)
+		if absf(v - value) > 0.0005:
+			value = v
+			queue_redraw()
+			if emit:
+				changed.emit(value)
+
+	func _gui_input(e: InputEvent) -> void:
+		if e is InputEventMouseButton and e.button_index == MOUSE_BUTTON_LEFT:
+			_drag = e.pressed
+			_last = (e.position - size / 2.0).angle()
+			accept_event()
+		elif e is InputEventMouseMotion and _drag:
+			var a: float = (e.position - size / 2.0).angle()
+			set_value(value + wrapf(a - _last, -PI, PI) / deg_to_rad(270.0), true)
+			_last = a
+			accept_event()
+
+	func _draw() -> void:
+		var s: float = minf(size.x, size.y)
+		var c: Vector2 = size / 2.0
+		for i in 19:
+			var a: float = deg_to_rad(135.0 + 270.0 * i / 18.0)
+			draw_line(c + Vector2.from_angle(a) * s * 0.44, c + Vector2.from_angle(a) * s * (0.5 if i % 3 == 0 else 0.47), UIK.ink(), 2.5, true)
+		draw_set_transform(c, deg_to_rad(-135.0 + 270.0 * value), Vector2.ONE)
+		draw_texture_rect(_tex, Rect2(-Vector2(s, s) * 0.4, Vector2(s, s) * 0.8), false)
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)

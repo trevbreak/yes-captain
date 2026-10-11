@@ -4,12 +4,13 @@ extends RefCounted
 ## by a parent, or overlap another clickable control. Used by the --layoutcheck autotest.
 
 static func _interactive(n: Control) -> bool:
-	return n is BaseButton or n is LineEdit or n is Lever or n is PipRow or n is Radar or n is Schematic
+	return n is BaseButton or n is LineEdit or n is ShipWheel or n is ThrottleLever or n is ClockDial or n is Radar \
+		or (n is Cutaway and (n as Cutaway).clickable) or n is BigButton
 
 static func _checkable(n: Control) -> bool:
 	if n is Label:
 		return (n as Label).text.strip_edges() != ""
-	return _interactive(n) or n is Dial or n is BarGauge or n is TextureRect or n is PanelContainer
+	return _interactive(n) or n is TextureRect or n is PanelContainer or n is Scope or n is Chart
 
 static func _overlay_root(n: Node) -> Node:
 	var p: Node = n
