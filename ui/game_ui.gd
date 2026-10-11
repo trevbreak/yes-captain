@@ -1,501 +1,324 @@
 class_name GameUI
 extends Control
-## In-game shell. Top bar: who you are, the objective checklist, ship status, menu.
-## Middle: your station (or the captain's bridge). Bottom dock: role switcher, IGOR, free seats.
-## Overlays: mission briefing, debrief, game over, ending, pause.
+## The in-game shell: a top bar (who you are, the mission, the hull), the station in the middle,
+## a dock at the bottom (your seats + IGOR's subtitles), toasts, the pause menu, the briefing and the debrief.
 
 signal leave_pressed
 
-const TOP_H: int = 64
+const TOP_H: int = 58
 const DOCK_H: int = 70
 
-var cap_ui: CaptainUI = null
-var stations: Dictionary = {}
-var current: String = ""
-var shell: Control
-# top bar
-var role_portrait: TextureRect
-var role_name: Label
-var role_sub: Label
-var obj_title: Label
-var obj_step: Label
-var obj_dots: HBoxContainer
+var top_pic: TextureRect
+var top_role: Label
+var top_persona: Label
+var top_mission: Label
+var top_time: Label
 var hull_chip: PanelContainer
-var mood_chip: PanelContainer
-var temper_chip: PanelContainer
-var res_chip: PanelContainer
-# dock
-var seat_row: HBoxContainer
-var seat_sig: String = ""
-var igor_lbl: Label
-var igor_t: float = 0.0
-var igor_box: PanelContainer
-var free_row: HBoxContainer
-# overlays
-var briefing: BriefingUI = null
-var overlay: Control = null
-var overlay_sig: String = ""
-var toast_box: VBoxContainer
-var order_card: PanelContainer
-var order_lbl: Label
-var order_t: float = 0.0
+var content: Control
+var stations: Dictionary = {}
+var cap_ui: CaptainUI
+var dock_seats: HBoxContainer
+var igor_pic: TextureRect
+var igor_who: Label
+var igor_text: Label
+var toast_chip: PanelContainer
+var _toast_tw: Tween
 var pause_panel: Control
-var spectate: PanelContainer
-var last: Dictionary = {}
+var briefing_ui: BriefingUI
+var overlay: Control = null
+var _active: String = ""
+var _seats_sig: String = ""
+var _phase: String = ""
+var _debrief_sig: String = ""
+var _igor_t: float = 0.0
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	mouse_filter = Control.MOUSE_FILTER_PASS
-	UIK.space_bg(self)
-	shell = Control.new()
-	shell.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	shell.offset_top = TOP_H + 4
-	shell.offset_bottom = -DOCK_H - 4
-	add_child(shell)
-	_build_top()
-	_build_dock()
-	toast_box = UIK.vbox(6)
-	toast_box.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
-	toast_box.offset_left = -360
-	toast_box.offset_right = -16
-	toast_box.offset_top = TOP_H + 14
-	toast_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	toast_box.set_meta("overlay", true)
-	add_child(toast_box)
-	order_card = UIK.panel("yellow", 12, 16)
-	order_card.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
-	order_card.offset_top = TOP_H + 10
-	order_card.offset_left = -320
-	order_card.offset_right = 320
-	order_card.set_meta("overlay", true)
-	var oh: HBoxContainer = UIK.hbox(10)
-	order_card.add_child(oh)
-	oh.add_child(UIK.portrait("captain", 48))
-	order_lbl = UIK.wrapped(UIK.heading("", 20))
-	order_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	oh.add_child(order_lbl)
-	order_card.visible = false
-	add_child(order_card)
-	spectate = UIK.panel("card", 18, 22)
-	spectate.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-	spectate.offset_left = -300
-	spectate.offset_right = 300
-	spectate.offset_top = -60
-	spectate.offset_bottom = 60
-	spectate.add_child(UIK.wrapped(UIK.heading("You don't have a role yet. Take a free seat from the dock at the bottom, or just watch the chaos.", 20, K.pal("ink"), 1)))
-	spectate.visible = false
-	add_child(spectate)
+	UIK.bg(self)
+	var root: VBoxContainer = UIK.vbox(8)
+	var m: MarginContainer = UIK.margin(root, 10)
+	m.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	add_child(m)
+	# ---- top bar
+	var top: HBoxContainer = UIK.hbox(12)
+	top.custom_minimum_size = Vector2(0, TOP_H)
+	root.add_child(top)
+	top_pic = UIK.portrait("captain", 56)
+	top.add_child(top_pic)
+	var tv: VBoxContainer = UIK.vbox(-6)
+	tv.alignment = BoxContainer.ALIGNMENT_CENTER
+	top.add_child(tv)
+	top_role = UIK.head("CAPTAIN", 27)
+	tv.add_child(top_role)
+	top_persona = UIK.label("", 19, K.pal("ink_soft"))
+	tv.add_child(top_persona)
+	top.add_child(UIK.spacer(true))
+	var mp: PanelContainer = UIK.panel("panel_small", [10, 0, 10, 0])
+	mp.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	top.add_child(mp)
+	var mh: HBoxContainer = UIK.hbox(12)
+	mp.add_child(mh)
+	top_mission = UIK.head("", 22)
+	mh.add_child(top_mission)
+	top_time = UIK.label("", 21, K.pal("ink_soft"))
+	mh.add_child(top_time)
+	top.add_child(UIK.spacer(true))
+	hull_chip = UIK.chip("HULL 100%", "red", "heart", 20)
+	hull_chip.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	top.add_child(hull_chip)
+	var menu_btn: Button = UIK.btn("", "cream", _toggle_pause, "menu", 26)
+	menu_btn.tooltip_text = "Menu (Esc)"
+	menu_btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	top.add_child(menu_btn)
+	# ---- station area
+	content = Control.new()
+	content.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	root.add_child(content)
+	cap_ui = CaptainUI.new()
+	cap_ui.visible = false
+	content.add_child(cap_ui)
+	for st in K.STATIONS:
+		var ui: Station = _make_station(st)
+		ui.visible = false
+		content.add_child(ui)
+		stations[st] = ui
+	# ---- dock
+	var dock: HBoxContainer = UIK.hbox(10)
+	dock.custom_minimum_size = Vector2(0, DOCK_H)
+	root.add_child(dock)
+	dock_seats = UIK.hbox(6)
+	dock_seats.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	dock.add_child(dock_seats)
+	var ib: PanelContainer = UIK.panel("panel_small", [0, -10, 0, -12])
+	ib.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	dock.add_child(ib)
+	var ih: HBoxContainer = UIK.hbox(10)
+	ib.add_child(ih)
+	igor_pic = UIK.portrait("igor", 46)
+	ih.add_child(igor_pic)
+	var iv: VBoxContainer = UIK.vbox(-6)
+	iv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	iv.alignment = BoxContainer.ALIGNMENT_CENTER
+	ih.add_child(iv)
+	igor_who = UIK.head("IGOR", 16, UIK.c("red"))
+	iv.add_child(igor_who)
+	igor_text = UIK.label("IGOR is watching. IGOR is always watching.", 21)
+	igor_text.clip_text = true
+	igor_text.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	igor_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	iv.add_child(igor_text)
+	# the latest news sits in a fixed slot at the end of the dock, so it never covers a control
+	toast_chip = UIK.chip("", "cream", "", 18)
+	toast_chip.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	toast_chip.modulate.a = 0.0
+	ih.add_child(toast_chip)
+	# ---- pause, briefing
+	briefing_ui = BriefingUI.new()
+	briefing_ui.z_index = 20
+	briefing_ui.visible = false
+	add_child(briefing_ui)
 	_build_pause()
 	Net.snapshot.connect(on_snapshot)
 	Net.event.connect(on_event)
 
-func _build_top() -> void:
-	var bar: PanelContainer = PanelContainer.new()
-	var s: StyleBoxFlat = UIK.sb(Color(K.pal("night"), 0.92), 0, Color(0, 0, 0, 0), 0, 8, 0)
-	s.border_width_bottom = 3
-	s.border_color = K.pal("night2").lightened(0.15)
-	bar.add_theme_stylebox_override("panel", s)
-	bar.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
-	bar.offset_bottom = TOP_H
-	add_child(bar)
-	var h: HBoxContainer = UIK.hbox(12)
-	bar.add_child(h)
-	# who am I
-	var who: HBoxContainer = UIK.hbox(8)
-	who.custom_minimum_size = Vector2(250, 0)
-	h.add_child(who)
-	role_portrait = UIK.portrait("captain", 48)
-	who.add_child(role_portrait)
-	var wv: VBoxContainer = UIK.vbox(-2)
-	wv.alignment = BoxContainer.ALIGNMENT_CENTER
-	who.add_child(wv)
-	role_name = UIK.heading("", 20, Color.WHITE)
-	wv.add_child(role_name)
-	role_sub = UIK.label("", 13, Color(1, 1, 1, 0.65))
-	wv.add_child(role_sub)
-	# objective tracker
-	var obj: PanelContainer = PanelContainer.new()
-	obj.add_theme_stylebox_override("panel", UIK.sb(K.pal("card"), UIK.RADIUS_S, K.pal("well").darkened(0.1), 2, 6))
-	obj.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	h.add_child(obj)
-	var oh: HBoxContainer = UIK.hbox(8)
-	obj.add_child(oh)
-	oh.add_child(UIK.icon_rect("check", 22, K.pal("green")))
-	var ov: VBoxContainer = UIK.vbox(-3)
-	ov.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	oh.add_child(ov)
-	obj_title = UIK.label("", 12, K.pal("ink_soft"))
-	obj_title.clip_text = true
-	ov.add_child(obj_title)
-	obj_step = UIK.heading("", 17)
-	obj_step.clip_text = true
-	obj_step.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	ov.add_child(obj_step)
-	obj_dots = UIK.hbox(4)
-	oh.add_child(obj_dots)
-	# status
-	hull_chip = UIK.chip("100%", "red", "hull", 15)
-	hull_chip.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	h.add_child(hull_chip)
-	mood_chip = UIK.chip("Calm", "pink", "pudding", 15)
-	mood_chip.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	h.add_child(mood_chip)
-	temper_chip = UIK.chip("Peeved", "purple", "temper", 15)
-	temper_chip.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	h.add_child(temper_chip)
-	res_chip = UIK.chip("", "yellow", "scrap", 15)
-	res_chip.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	h.add_child(res_chip)
-	var menu: Button = UIK.icon_btn("menu", "neutral", func(): pause_panel.visible = not pause_panel.visible, "Menu (Esc)")
-	h.add_child(menu)
-
-func _build_dock() -> void:
-	var dock: PanelContainer = PanelContainer.new()
-	var s: StyleBoxFlat = UIK.sb(Color(K.pal("night"), 0.92), 0, Color(0, 0, 0, 0), 0, 8, 0)
-	s.border_width_top = 3
-	s.border_color = K.pal("night2").lightened(0.15)
-	dock.add_theme_stylebox_override("panel", s)
-	dock.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
-	dock.offset_top = -DOCK_H
-	add_child(dock)
-	var h: HBoxContainer = UIK.hbox(10)
-	dock.add_child(h)
-	seat_row = UIK.hbox(6)
-	h.add_child(seat_row)
-	igor_box = PanelContainer.new()
-	igor_box.add_theme_stylebox_override("panel", UIK.sb(K.pal("card"), UIK.RADIUS, K.pal("sensors").darkened(0.1), 2, 4))
-	igor_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	h.add_child(igor_box)
-	var ih: HBoxContainer = UIK.hbox(8)
-	igor_box.add_child(ih)
-	ih.add_child(UIK.portrait("igor", 44))
-	igor_lbl = UIK.label("IGOR is watching. IGOR is always watching.", 15, K.pal("ink"))
-	igor_lbl.clip_text = true
-	igor_lbl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	igor_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	ih.add_child(igor_lbl)
-	free_row = UIK.hbox(4)
-	h.add_child(free_row)
+func _make_station(st: String) -> Station:
+	match st:
+		"helm":
+			return HelmUI.new()
+		"engines":
+			return EnginesUI.new()
+		"weapons":
+			return WeaponsUI.new()
+		"sensors":
+			return SensorsUI.new()
+		"shields":
+			return ShieldsUI.new()
+	return EngineerUI.new()
 
 func _build_pause() -> void:
 	pause_panel = Control.new()
 	pause_panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	pause_panel.set_meta("overlay", true)
-	pause_panel.mouse_filter = Control.MOUSE_FILTER_STOP
-	UIK.bg_color(pause_panel, Color(K.pal("night"), 0.7))
-	var center: CenterContainer = CenterContainer.new()
-	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	pause_panel.add_child(center)
-	var w: Array = UIK.window("MENU", "blue", "menu", 18)
-	(w[0] as Control).custom_minimum_size = Vector2(420, 0)
-	center.add_child(w[0])
-	var v: VBoxContainer = w[1]
-	v.add_child(UIK.speech("The ship does not pause. IGOR does not allow it.", "igor", "", 56))
-	var snd: Button = UIK.toggle_btn("Sound", "neutral", func(on: bool): Sfx.enabled = on)
-	snd.button_pressed = Sfx.enabled
-	v.add_child(snd)
-	var tts: Button = UIK.toggle_btn("IGOR's voice", "neutral", func(on: bool): Sfx.tts_on = on)
-	tts.button_pressed = Sfx.tts_on
-	v.add_child(tts)
-	v.add_child(UIK.btn("Back to the game", "green", func(): pause_panel.visible = false, "play"))
-	v.add_child(UIK.btn("Leave the game", "red", func(): leave_pressed.emit(), "back"))
+	pause_panel.z_index = 40
 	pause_panel.visible = false
 	add_child(pause_panel)
+	var dim: ColorRect = ColorRect.new()
+	dim.color = Color(0.1, 0.07, 0.05, 0.55)
+	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	pause_panel.add_child(dim)
+	var w: Array = UIK.window("MENU", "navy", "menu")
+	var cc: CenterContainer = CenterContainer.new()
+	cc.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	pause_panel.add_child(cc)
+	w[0].custom_minimum_size = Vector2(440, 0)
+	cc.add_child(w[0])
+	var b: VBoxContainer = w[1]
+	b.add_child(UIK.speech("The ship does not pause. IGOR does not allow it.", "igor", "", 70, 21))
+	var snd: Button = UIK.toggle("Sound", "green", func(on: bool): UIK.set_sound(on), "speaker")
+	snd.button_pressed = UIK.sound_on()
+	b.add_child(snd)
+	var voice: Button = UIK.toggle("IGOR's voice", "green", func(on: bool): UIK.set_voice(on), "robot")
+	voice.button_pressed = UIK.voice_on()
+	b.add_child(voice)
+	var grain: Button = UIK.toggle("Film grain", "green", func(on: bool): UIK.set_grain(on), "eye")
+	grain.button_pressed = Film.enabled
+	b.add_child(grain)
+	b.add_child(UIK.btn("Back to the game", "green", _toggle_pause, "play"))
+	b.add_child(UIK.btn("Leave the game", "red", func():
+		pause_panel.visible = false
+		leave_pressed.emit(), "back"))
+
+func _toggle_pause() -> void:
+	pause_panel.visible = not pause_panel.visible
+
+func _unhandled_input(e: InputEvent) -> void:
+	if not is_visible_in_tree():
+		return
+	if e is InputEventKey and e.pressed and not e.echo:
+		var k: Key = (e as InputEventKey).physical_keycode
+		if k == KEY_ESCAPE:
+			_toggle_pause()
+			get_viewport().set_input_as_handled()
+			return
+		var mine: Array = Net.last_snapshot.get("seats", [])
+		var idx: int = [KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7].find(k)
+		if idx >= 0 and idx < K.SEATS.size() and K.SEATS[idx] in mine:
+			Net.send("active", {"seat": K.SEATS[idx]})
+			get_viewport().set_input_as_handled()
+
+func reset() -> void:
+	_active = ""
+	_seats_sig = ""
+	_phase = ""
+	_debrief_sig = ""
+	toast_chip.modulate.a = 0.0
+	_clear_overlay()
+	briefing_ui.visible = false
+	pause_panel.visible = false
+
+func _clear_overlay() -> void:
+	if overlay != null:
+		overlay.queue_free()
+		overlay = null
 
 # ---------------------------------------------------------------- snapshots
 
 func on_snapshot(d: Dictionary) -> void:
-	if not visible or not d.has("common"):
+	if not is_visible_in_tree():
 		return
-	last = d
-	var act: String = str(d.get("active", ""))
 	var phase: String = str(d.get("phase", ""))
+	var com: Dictionary = d.get("common", {})
+	var act: String = str(d.get("active", ""))
 	var seats: Array = d.get("seats", [])
-	_update_top(d, act)
-	_update_dock(seats, act)
-	# briefing takes over the whole screen
+	if phase != _phase:
+		_phase = phase
+		_clear_overlay()
+		_debrief_sig = ""
+		for st in stations.values():
+			(st as Station).release_all()
+	briefing_ui.visible = phase == "briefing"
+	content.visible = phase != "briefing"
 	if phase == "briefing":
-		if briefing == null:
-			briefing = BriefingUI.new()
-			add_child(briefing)
-			move_child(briefing, get_child_count() - 1)
-			move_child(pause_panel, get_child_count() - 1)
-		briefing.visible = true
-		briefing.apply(d)
-	elif briefing != null:
-		briefing.queue_free()
-		briefing = null
-	spectate.visible = act == "" and phase != "briefing"
-	if current != act:
-		_switch(act)
-	if act == "captain" and cap_ui != null:
-		cap_ui.apply(d.view, d)
-	elif act != "" and stations.has(act):
-		var su: StationUI = stations[act]
-		su.apply(d.view, d)
-		var sh: float = float(d.common.get("shake", 0.0))
-		su.position = Vector2(randf_range(-1, 1), randf_range(-1, 1)) * sh * 4.0 if sh > 0.05 else Vector2.ZERO
-	_update_overlay(d)
+		briefing_ui.apply(d.get("phase_data", {}), seats)
+	var view_seat: String = act if act != "" else "captain"
+	if view_seat != _active:
+		_active = view_seat
+		cap_ui.visible = view_seat == "captain"
+		for st in stations.keys():
+			stations[st].visible = st == view_seat
+			if st != view_seat:
+				(stations[st] as Station).release_all()
+		var info: Dictionary = K.SEAT_INFO.get(view_seat, {})
+		top_pic.texture = Art.sized("portrait_" + view_seat, 56)
+		top_role.text = str(info.get("name", "")).to_upper()
+		top_role.add_theme_color_override("font_color", K.seat_color(view_seat).darkened(0.2))
+		top_persona.text = str(info.get("persona", "")) + ("" if act != "" else "  (watching)")
+	var sig: String = ",".join(PackedStringArray(seats)) + "/" + act
+	if sig != _seats_sig:
+		_seats_sig = sig
+		_build_dock(seats, act)
+	var mi: Dictionary = com.get("mission", {})
+	top_mission.text = "MISSION %d: %s" % [int(mi.get("num", 0)), str(mi.get("title", "")).to_upper()]
+	top_time.text = K.fmt_time(float(mi.get("time", 0.0)))
+	var hull: float = float(com.get("hull", 100.0))
+	UIK.set_chip(hull_chip, "HULL %d%%" % int(hull), "red" if hull > 35.0 else "ink")
+	var v: Dictionary = d.get("view", {})
+	if view_seat == "captain":
+		cap_ui.apply(v, com)
+	elif stations.has(view_seat):
+		(stations[view_seat] as Station).apply(v, com)
+	if phase == "debrief":
+		var pd: Dictionary = d.get("phase_data", {})
+		var dsig: String = "%s/%s" % [str(pd.get("title", "")), str(pd.get("can_continue", false))]
+		if dsig != _debrief_sig:
+			_debrief_sig = dsig
+			_clear_overlay()
+			overlay = Screens.debrief(pd, func(): Net.send("next"), func(): Net.send("retry"), func(): Net.send("lobby"))
+			overlay.z_index = 25
+			add_child(overlay)
+			move_child(overlay, pause_panel.get_index())
 
-func _update_top(d: Dictionary, act: String) -> void:
-	var com: Dictionary = d.common
-	if act != "" and K.SEAT_INFO.has(act):
-		var info: Dictionary = K.SEAT_INFO[act]
-		var want: Texture2D = UIK.portrait_tex(str(info.portrait), 96)
-		if role_portrait.texture != want:
-			role_portrait.texture = want
-		role_name.text = K.seat_name(act)
-		role_sub.text = str(info.persona)
-	else:
-		role_name.text = "Spectating"
-		role_sub.text = str(com.get("ship_name", ""))
-	var steps: Array = com.get("steps", [])
-	var phase: String = str(d.get("phase", ""))
-	obj_title.text = "%s  ·  %s" % [str(com.get("title", "")), K.fmt_time(float(com.get("t", 0.0)))] if phase == "encounter" else str(com.get("ship_name", "")).to_upper()
-	var cur: String = ""
-	var done_n: int = 0
-	for st in steps:
-		if bool(st.done):
-			done_n += 1
-		elif cur == "":
-			cur = str(st.text)
-	match phase:
-		"staging":
-			cur = "JUMP RITUAL: coordinates, capacitor, speed, cargo... then PUNCH IT"
-		"pitstop":
-			cur = "Pit stop at Ma Gristle's: ask the captain for upgrades"
-		"debrief":
-			cur = "Mission complete. Waiting for the captain."
-		"jumping":
-			cur = "JUMPING..."
-		"briefing":
-			cur = "Mission briefing"
-	obj_step.text = cur if cur != "" else str(com.get("obj", ""))
-	if obj_dots.get_child_count() != steps.size():
-		for ch in obj_dots.get_children():
-			ch.queue_free()
-		for i in steps.size():
-			var dot: Panel = Panel.new()
-			dot.custom_minimum_size = Vector2(14, 14)
-			dot.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-			obj_dots.add_child(dot)
-	for i2 in mini(steps.size(), obj_dots.get_child_count()):
-		var dn: bool = bool(steps[i2].done)
-		(obj_dots.get_child(i2) as Panel).add_theme_stylebox_override("panel", UIK.sb(K.pal("green") if dn else K.pal("well"), 7, K.pal("green").darkened(0.2) if dn else K.pal("well").darkened(0.15), 2, 0))
-	var hull: float = maxf(0.0, 100.0 * float(com.hull) / maxf(1.0, float(com.hull_max)))
-	_chip_text(hull_chip, "Hull %d%%" % int(hull))
-	var mood: float = float(com.mood)
-	_chip_text(mood_chip, "Pudding: " + ("LOOSE!" if bool(com.get("loose", false)) else ("calm" if mood < 40.0 else ("twitchy" if mood < 70.0 else "PANIC"))))
-	var run: Dictionary = d.get("run", {})
-	_chip_text(temper_chip, "Overlord: %s" % str(run.get("temper_name", "Cross")))
-	_chip_text(res_chip, "%d scrap · %d fuel" % [int(run.get("scrap", 0)), int(run.get("fuel", 0))])
-
-func _chip_text(chip: PanelContainer, text: String) -> void:
-	for l in chip.find_children("*", "Label", true, false):
-		(l as Label).text = text
-
-func _update_dock(seats: Array, act: String) -> void:
-	var frees: Array = []
-	var lob: Dictionary = Net.last_lobby
-	for seat in K.SEATS:
-		var s: Dictionary = lob.get("seats", {}).get(seat, {})
-		if int(s.get("owner", 0)) == 0 and not lob.is_empty():
-			frees.append(seat)
-	var sig: String = ",".join(seats) + "|" + act + "|" + ",".join(frees)
-	if sig == seat_sig:
-		return
-	seat_sig = sig
-	for c in seat_row.get_children():
+func _build_dock(seats: Array, act: String) -> void:
+	for c in dock_seats.get_children():
 		c.queue_free()
-	var i: int = 1
-	for s2 in seats:
-		var seat: String = s2
-		var b: Button = UIK.btn(str(i), UIK.seat_color(seat) if seat == act else "neutral", func(): Net.send("active", {"seat": seat}), str(K.SEAT_INFO[seat].icon))
-		b.tooltip_text = "%s (key %d)" % [K.seat_name(seat), i]
-		b.custom_minimum_size = Vector2(64, 50)
-		seat_row.add_child(b)
-		i += 1
-	if not seats.is_empty():
-		var dc: Button = UIK.btn("F", "dc" if act == "dc" else "neutral", func(): Net.send("active", {"seat": "dc"}), "dc")
-		dc.tooltip_text = "Damage Control (key F)"
-		dc.custom_minimum_size = Vector2(64, 50)
-		seat_row.add_child(dc)
-	for c2 in free_row.get_children():
-		c2.queue_free()
-	if not frees.is_empty():
-		free_row.add_child(UIK.label("Free:", 13, Color(1, 1, 1, 0.7)))
-	for fs in frees:
-		var fseat: String = fs
-		var fb: Button = UIK.icon_btn(str(K.SEAT_INFO[fseat].icon), UIK.seat_color(fseat), func(): Net.send("claim", {"seat": fseat}), "Take the free %s seat" % K.seat_name(fseat))
-		fb.custom_minimum_size = Vector2(46, 46)
-		free_row.add_child(fb)
-
-func _switch(want: String) -> void:
-	current = want
-	if cap_ui != null:
-		cap_ui.visible = want == "captain"
-		cap_ui.process_mode = Node.PROCESS_MODE_INHERIT if want == "captain" else Node.PROCESS_MODE_DISABLED
-	for k in stations.keys():
-		stations[k].visible = k == want
-	if want == "captain":
-		if cap_ui == null:
-			cap_ui = CaptainUI.new()
-			shell.add_child(cap_ui)
-		cap_ui.visible = true
-		cap_ui.process_mode = Node.PROCESS_MODE_INHERIT
-	elif want != "":
-		if not stations.has(want):
-			var su: StationUI = Stations.make(want, false)
-			stations[want] = su
-			shell.add_child(su)
-		stations[want].visible = true
-
-func _update_overlay(d: Dictionary) -> void:
-	var phase: String = str(d.get("phase", ""))
-	var act: String = str(d.get("active", ""))
-	var ph: Dictionary = d.get("ph", {})
-	var is_cap: bool = act == "captain"
-	var sig: String = ""
-	match phase:
-		"debrief":
-			sig = "debrief" + str(ph.get("debrief", {}).get("title", "")) + str(ph.get("debrief", {}).get("time", ""))
-		"gameover":
-			sig = "gameover" + str(ph.get("over", {}).get("reason", ""))
-		"ending":
-			sig = "ending"
-	if sig != "":
-		sig += str(is_cap)
-	if sig == overlay_sig:
+	if seats.size() <= 1:
 		return
-	overlay_sig = sig
-	if overlay != null:
-		overlay.queue_free()
-		overlay = null
-	var cont: Callable = func(): Net.send("cap", {"cmd": "continue"})
-	var retry: Callable = func(): Net.send("cap", {"cmd": "retry"})
-	var lob: Callable = func(): Net.send("cap", {"cmd": "lobby"})
-	match phase:
-		"debrief":
-			overlay = Screens.debrief_panel(ph, is_cap, str(ph.get("mode", "run")), cont, retry, lob)
-		"gameover":
-			overlay = Screens.gameover_panel(ph, is_cap, str(ph.get("mode", "run")), cont, retry, lob)
-		"ending":
-			overlay = Screens.ending_panel(ph, is_cap, cont)
-	if overlay != null:
-		overlay.set_meta("overlay", true)
-		shell.add_child(overlay)
+	for i in K.SEATS.size():
+		var s: String = K.SEATS[i]
+		if not (s in seats):
+			continue
+		var on: bool = s == act
+		var b: Button = UIK.btn(str(i + 1), str(K.SEAT_INFO[s].color) if on else "cream", func(): Net.send("active", {"seat": s}), str(K.SEAT_INFO[s].icon), 20)
+		b.tooltip_text = "%s (key %d)" % [K.seat_name(s), i + 1]
+		b.custom_minimum_size = Vector2(70, 54)
+		dock_seats.add_child(b)
 
 # ---------------------------------------------------------------- events
 
 func on_event(d: Dictionary) -> void:
-	if not visible:
+	if not is_visible_in_tree():
 		return
 	match str(d.get("t", "")):
 		"igor":
-			_igor(str(d.text))
-			if cap_ui != null:
-				cap_ui.on_igor()
+			var who: String = str(d.get("who", "igor"))
+			igor_pic.texture = Art.sized("portrait_" + who, 50)
+			igor_who.text = {"igor": "IGOR", "thrupp": "ADMIRAL THRUPP", "pudding": "PUDDING", "gristle": "MA GRISTLE"}.get(who, who.to_upper())
+			igor_text.text = str(d.get("text", ""))
+			igor_text.tooltip_text = igor_text.text
+			if bool(d.get("speak", false)) and _phase == "mission":
+				UIK.speak(igor_text.text)
 		"toast":
-			toast(str(d.text))
-		"hail":
-			if current != "captain":
-				toast("%s: %s" % [d.from, d.text], "comms")
-			Sfx.play("ding")
-		"bark":
-			if cap_ui != null and current == "captain":
-				cap_ui.on_bark(str(d.text))
-			else:
-				toast(str(d.text), "robot")
-		"order":
-			order_lbl.text = str(d.text)
-			order_card.visible = true
-			order_t = 6.0
-			Sfx.play("blip")
+			toast(str(d.get("text", "")), str(d.get("kind", "info")), str(d.get("who", "")))
+		"step":
+			if _phase == "mission":
+				toast("NEXT: " + str(d.get("text", "")), "step", "captain")
 		"fx":
-			if cap_ui != null:
-				cap_ui.on_fx(d)
-			if current != "captain":
-				if d.get("fx", "") == "boom":
-					Sfx.play("boom", randf_range(0.8, 1.2), -8.0)
-				elif d.get("fx", "") == "alarm":
-					Sfx.play("alarm")
-		"encounter_start":
-			Sfx.play("whoosh")
-		"debrief":
-			Sfx.play("ding")
-		"gameover":
-			Sfx.play("powerdown")
+			match str(d.get("fx", "")):
+				"boom":
+					UIK.sfx("boom")
+				"hit":
+					UIK.sfx("bonk")
+				"alarm":
+					UIK.sfx("alarm")
+				"ding":
+					UIK.sfx("ding")
+				"blackout":
+					UIK.sfx("powerdown")
+				"bump":
+					UIK.sfx("clunk")
+		"countdown":
+			UIK.sfx("chime")
+		"mission_start":
+			UIK.sfx("whoosh")
 
-func _igor(text: String) -> void:
-	igor_lbl.text = text
-	igor_lbl.tooltip_text = text
-	igor_t = 7.0 + float(text.length()) * 0.04
-	var st: StyleBoxFlat = UIK.sb(K.pal("yellow").lightened(0.6), UIK.RADIUS, K.pal("sensors"), 3, 4)
-	igor_box.add_theme_stylebox_override("panel", st)
-	Sfx.speak(text)
-
-func toast(text: String, icon_name: String = "warning") -> void:
-	var p: PanelContainer = UIK.panel("card", 10, 14)
-	var h: HBoxContainer = UIK.hbox(8)
-	p.add_child(h)
-	h.add_child(UIK.icon_rect(icon_name if UIK.icon(icon_name) != null else "warning", 20, K.pal("blue")))
-	var l: Label = UIK.wrapped(UIK.label(text, 15))
-	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	h.add_child(l)
-	p.custom_minimum_size = Vector2(330, 0)
-	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	toast_box.add_child(p)
-	var tw: Tween = create_tween()
-	tw.tween_interval(5.0)
-	tw.tween_property(p, "modulate:a", 0.0, 0.5)
-	tw.tween_callback(p.queue_free)
-	while toast_box.get_child_count() > 4:
-		var old: Node = toast_box.get_child(0)
-		toast_box.remove_child(old)
-		old.queue_free()
-
-func _process(delta: float) -> void:
-	if igor_t > 0.0:
-		igor_t -= delta
-		if igor_t <= 0.0:
-			igor_box.add_theme_stylebox_override("panel", UIK.sb(K.pal("card"), UIK.RADIUS, K.pal("sensors").darkened(0.1), 2, 4))
-	if order_t > 0.0:
-		order_t -= delta
-		if order_t <= 0.0:
-			order_card.visible = false
-
-func _unhandled_key_input(e: InputEvent) -> void:
-	if not visible or not (e is InputEventKey):
-		return
-	var ke: InputEventKey = e
-	if not ke.pressed or ke.echo:
-		return
-	var seats: Array = last.get("seats", [])
-	if ke.keycode >= KEY_1 and ke.keycode <= KEY_7:
-		var i: int = ke.keycode - KEY_1
-		if i < seats.size():
-			Net.send("active", {"seat": seats[i]})
-			get_viewport().set_input_as_handled()
-	elif ke.keycode == KEY_F and not seats.is_empty():
-		Net.send("active", {"seat": "dc"})
-		get_viewport().set_input_as_handled()
-	elif ke.keycode == KEY_ESCAPE:
-		pause_panel.visible = not pause_panel.visible
-
-func reset() -> void:
-	for k in stations.keys():
-		stations[k].queue_free()
-	stations.clear()
-	if cap_ui != null:
-		cap_ui.queue_free()
-		cap_ui = null
-	if overlay != null:
-		overlay.queue_free()
-		overlay = null
-	if briefing != null:
-		briefing.queue_free()
-		briefing = null
-	current = ""
-	seat_sig = ""
-	overlay_sig = ""
-	pause_panel.visible = false
+func toast(text: String, kind: String = "info", _who: String = "") -> void:
+	var col: String = {"bad": "red", "good": "green", "step": "mustard", "info": "cream"}.get(kind, "cream")
+	if text.length() > 34:
+		text = text.left(33) + "…"
+	UIK.set_chip(toast_chip, text, col)
+	if _toast_tw != null and _toast_tw.is_valid():
+		_toast_tw.kill()
+	toast_chip.modulate.a = 1.0
+	_toast_tw = toast_chip.create_tween()
+	_toast_tw.tween_interval(3.0)
+	_toast_tw.tween_property(toast_chip, "modulate:a", 0.0, 0.5)

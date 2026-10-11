@@ -1,253 +1,341 @@
 class_name Snapshots
 extends RefCounted
-## Per-station filtered views of the world. A station only RECEIVES what that station may know:
-## that is how the information asymmetry is enforced (not just hidden in the UI).
+## What each seat is allowed to know. This is the game: the captain sees the big picture, each crew
+## member sees their own thing in detail, and nobody sees both.
 
-static func faults_for(w: World, st: String) -> Array:
-	var out: Array = []
-	var s: Ship = w.ship
-	for id in s.mod_order:
-		var m: Dictionary = s.modules[id]
-		if m.owner != st:
-			continue
-		var state: int = s.mod_state(id)
-		var nopower: bool = not s.conduit_ok(m.conduit)
-		if state >= 1 or m.fire > 0.0 or m.breach or m.fault != "" or nopower or m.warn > 0.0:
-			out.append({"id": id, "label": m.label, "state": state, "fire": m.fire > 0.0, "breach": m.breach,
-				"fault": m.fault, "nopower": nopower, "work": m.work, "hp": m.hp, "warn": m.warn > 0.0,
-				"task": w.target_task("mod:" + id), "mash": w.mash.get("mod:" + id, 0.0)})
-	return out
+const WEAPON_CONE: float = 0.42   # half-angle of what Weapons sees down the barrel
+const WEAPON_RANGE: float = 560.0
 
-static func rel_bearing(w: World, p: Vector2) -> float:
-	return K.wrap_pi((p - w.ship.pos).angle() - w.ship.heading)
+static func _v(p: Vector2) -> Array:
+	return [snappedf(p.x, 0.1), snappedf(p.y, 0.1)]
 
-static func common(w: World) -> Dictionary:
-	var s: Ship = w.ship
-	var enc: Encounter = w.enc
-	return {"t": w.t, "hull": s.hull, "hull_max": s.hull_max, "temper": w.temper, "scram": s.scram_t > 0.0,
-		"obj": enc.objective_text if enc != null else "", "title": enc.title if enc != null else "",
-		"mood": s.pud["mood"], "loose": s.pud["loose"], "shake": s.shake, "speed": s.speed(), "mods": w.mods,
-		"enc_prog": enc.prog if enc != null else 0.0, "steps": enc.steps() if enc != null else []}
+static func _kind(e: Dictionary) -> String:
+	return str(e.kind) if e.scanned else "unknown"
+
+static func _name(e: Dictionary) -> String:
+	return str(e.name) if e.scanned else "Unknown contact"
+
+static func common(w: World, station: String) -> Dictionary:
+	var m: Mission = w.mission
+	return {
+		"t": snappedf(w.t, 0.1), "hull": snappedf(w.ship.hull, 0.1), "hull_max": w.ship.hull_max, "features": w.features,
+		"mission": {"title": m.title if m else "", "num": m.num if m else 0, "time": snappedf(m.t if m else 0.0, 0.1),
+			"par": m.par if m else 0.0, "step": m.step if m else 0, "steps": m.steps.size() if m else 0},
+		"hint": m.hint(station) if m else "", "blackout": w.ship.blackout_t > 0.0,
+	}
+
+# ---------------------------------------------------------------- crew
 
 static func helm(w: World) -> Dictionary:
 	var s: Ship = w.ship
-	var d: Dictionary = {"heading": s.heading, "angvel": s.angvel, "yaw": s.yaw, "strafe": s.strafe, "trim": s.trim,
-		"drift": s.trim_bias - s.trim, "rcs_pf": s.pf("rcs"), "auth_r": (s.eff("RCS_FP") + s.eff("RCS_AS")) * 0.5,
-		"auth_l": (s.eff("RCS_FS") + s.eff("RCS_AP")) * 0.5, "roll_cd": s.roll_cd, "faults": faults_for(w, "helm")}
-	if w.enc != null and not w.enc.done and w.enc.goal != Vector2.ZERO:
-		d["wp_bearing"] = rel_bearing(w, w.enc.goal)
-	d["enc"] = w.enc.station_data("helm") if w.enc != null else {}
-	return d
+	var pull: float = 0.0
+	if s.throttle > 0.05:
+		if not s.ok("engine_p") and s.ok("engine_s"):
+			pull = -1.0
+		elif not s.ok("engine_s") and s.ok("engine_p"):
+			pull = 1.0
+	return {"heading": K.bearing_deg(s.heading), "heading_rad": s.heading, "wheel": s.wheel, "spin": snappedf(s.angvel, 0.01),
+		"steer_ok": s.ok("bridge"), "pull": pull, "roll_cd": snappedf(s.roll_cd, 0.1), "rolling": s.roll_t > 0.0,
+		"shaking": w.shake_t > 0.2}
 
 static func engines(w: World) -> Dictionary:
 	var s: Ship = w.ship
-	return {"speed": s.speed(), "thr_p": s.thr_p, "thr_s": s.thr_s, "link": s.link, "boost": s.boost,
-		"dampers": s.dampers, "dampers_ok": s.eff("DAMP") > 0.0 and not s.dampers_locked, "mix": s.mix, "heat": s.eng_heat, "accel": s.accel_mag,
-		"st_p": s.mod_state("ENG_P"), "st_s": s.mod_state("ENG_S"), "on_p": s.online("ENG_P"), "on_s": s.online("ENG_S"),
-		"stuck_p": s.modules["ENG_P"].fault == "stuck_full" and s.mod_state("ENG_P") >= 2,
-		"stuck_s": s.modules["ENG_S"].fault == "stuck_full" and s.mod_state("ENG_S") >= 2,
-		"pf": s.pf("engines"), "faults": faults_for(w, "engines"),
-		"enc": w.enc.station_data("engines") if w.enc != null else {}}
-
-static func power(w: World) -> Dictionary:
-	var s: Ship = w.ship
-	var cons: Dictionary = {}
-	for c in K.CONDUITS:
-		var cd: Dictionary = s.conduits[c]
-		var known: bool = (not cd.hidden) or w.reveal_t > 0.0
-		cons[c] = {"cut": cd.cut and known, "unknown": cd.cut and not known, "iso": s.isolate[c]}
-	return {"alloc": s.alloc.duplicate(), "avail": s.avail, "used": s.used, "brown": s.brown, "heat": s.reactor_heat,
-		"cool_p": s.cool_p, "pump": s.pump, "vent_cd": s.vent_cd, "oc_sys": s.oc_sys, "oc_t": s.oc_t,
-		"scram_t": s.scram_t, "tripped": s.tripped.duplicate(), "cons": cons, "jump_charge": s.jump_charge,
-		"charging": s.charging, "faults": faults_for(w, "power"), "leak": s.coolant_leak,
-		"enc": w.enc.station_data("power") if w.enc != null else {}}
+	return {"throttle": s.throttle, "speed": snappedf(s.speed(), 0.1), "max": Ship.MAX_SPEED * (1.65 if w.feat("boost") else 1.0),
+		"port": str(s.sys.engine_p.state), "star": str(s.sys.engine_s.state), "heat": snappedf(s.engine_heat, 0.1), "boost": s.boost}
 
 static func weapons(w: World) -> Dictionary:
 	var s: Ship = w.ship
-	var turrets: Array = []
-	for id in ["TUR_A", "TUR_B"]:
-		var m: Dictionary = s.modules[id]
-		var arc: Array = s.turret_arc(id)
-		turrets.append({"id": id, "ang": m.ang, "tgt": m.tgt, "lo": arc[0], "hi": arc[1], "loaded": m.loaded,
-			"load_p": m.load_p, "heat": m.heat, "cd": m.cd, "state": s.mod_state(id), "online": s.online(id),
-			"jam": m.fault == "jam" and s.mod_state(id) >= 2, "track": w.track.get(id, false), "label": m.label})
-	var tube: Dictionary = s.modules["TUBE"]
-	# scope: everything inside a narrow cone around the selected turret
-	var sel: String = w.sel_turret
-	var sm: Dictionary = s.modules[sel]
-	var tdir: float = s.heading + float(sm.ang)
-	var tpos: Vector2 = w.turret_pos(sel)
-	var scope: Array = []
-	var locks: Array = []
+	var view: Array = []
+	var ta: float = s.turret_world()
 	for e in w.ents:
-		if e.dead or e.kind in ["bullet", "waypoint", "debris", "ebullet", "eshell", "torp"] or not e.radar:
+		if not e.alive or e.kind == "ring":
 			continue
-		var to: Vector2 = e.pos - tpos
+		var to: Vector2 = e.pos - s.pos
 		var d: float = to.length()
-		var scanned: bool = w.is_scanned(e)
-		if d < 900.0:
-			var off: float = K.wrap_pi(to.angle() - tdir)
-			if absf(off) < deg_to_rad(14.0) and d > 5.0:
-				var item: Dictionary = {"id": e.id, "off": off, "d": d, "r": e.r, "kind": e.kind if scanned else "?",
-					"scanned": scanned, "fac": e.fac if scanned else "?"}
-				if scanned and e.kind == "bastion":
-					item["weak_off"] = K.wrap_pi((w.weak_pos(e) - tpos).angle() - tdir)
-				scope.append(item)
-		if scanned and d < w.sensor_range() * 1.2:
-			locks.append({"id": e.id, "name": e.name, "kind": e.kind, "d": d, "bearing": rel_bearing(w, e.pos),
-				"hp": 100.0 * float(e.hp) / maxf(1.0, float(e.hpmax)) if float(e.hpmax) < 5000.0 else 100.0, "weak": e.kind == "bastion"})
-	var lock_info: Dictionary = {}
-	var le: Dictionary = w.find(w.lock_id)
-	if not le.is_empty():
-		lock_info = {"id": le.id, "name": le.name, "d": le.pos.distance_to(s.pos), "bearing": rel_bearing(w, le.pos)}
-	return {"turrets": turrets, "sel": sel, "scope": scope, "locks": locks, "lock": lock_info, "lock_weak": w.lock_weak,
-		"tube": {"state": tube.tstate, "load_p": tube.load_p, "arm_p": tube.arm_p, "online": s.online("TUBE")},
-		"stowed": w.stowed, "pf": s.pf("weapons"), "faults": faults_for(w, "weapons"),
-		"enc": w.enc.station_data("weapons") if w.enc != null else {}}
+		if d > WEAPON_RANGE:
+			continue
+		var rel: float = K.wrap_pi(to.angle() - ta)
+		var half: float = asin(clampf(e.r / maxf(d, 1.0), 0.0, 1.0))
+		if absf(rel) > WEAPON_CONE + half:
+			continue
+		view.append({"id": e.id, "rel": snappedf(rel, 0.001), "dist": snappedf(d, 0.1), "kind": _kind(e), "r": e.r,
+			"latched": e.latched, "heading": snappedf(K.wrap_pi(float(e.heading) - ta), 0.01), "weak": e.weak_known,
+			"hp": e.hp / maxf(1.0, e.hp_max)})
+	var bullets: Array = []
+	for sh in w.shots:
+		var to2: Vector2 = sh.pos - s.pos
+		var rel2: float = K.wrap_pi(to2.angle() - ta)
+		if absf(rel2) < WEAPON_CONE and to2.length() < WEAPON_RANGE:
+			bullets.append({"rel": snappedf(rel2, 0.001), "dist": snappedf(to2.length(), 0.1), "from": sh.from, "kind": sh.kind})
+	return {"aim": s.aim, "firing": s.firing, "gun": str(s.sys.gun.state), "heat": snappedf(s.gun_heat, 0.1), "torp": s.torp,
+		"torp_load": snappedf(s.torp_load, 0.01), "view": view, "bullets": bullets, "cone": WEAPON_CONE, "range": WEAPON_RANGE}
 
 static func sensors(w: World) -> Dictionary:
 	var s: Ship = w.ship
-	var rng_m: float = w.sensor_range()
-	var mirror: bool = s.modules["SENS"].fault == "mirror" and s.mod_state("SENS") >= 2
-	var contacts: Array = []
-	var incoming: Array = []
-	var tele: Array = []
+	var blips: Array = []
+	var ok: bool = s.ok("sensors")
 	for e in w.ents:
-		if e.dead or not e.radar:
+		if not e.alive or e.kind == "ring" or e.ai == "thrown":
 			continue
-		var rel: Vector2 = e.pos - s.pos
-		var d: float = rel.length()
-		if e.kind in ["ebullet", "eshell"]:
-			if d < rng_m:
-				incoming.append({"p": rel, "v": e.vel, "big": e.kind == "eshell"})
+		var to: Vector2 = (e.pos - s.pos).rotated(-s.heading - PI / 2.0)   # ship-up frame: nose is up
+		if to.length() > World.RADAR_RANGE:
 			continue
-		if e.kind == "torp" or e.kind == "bullet":
-			continue
-		if d > rng_m + float(e.r):
-			continue
-		var scanned: bool = w.is_scanned(e)
-		var item: Dictionary = {"id": e.id, "p": rel, "r": e.r, "vel": e.vel, "scanned": scanned, "ang": e.ang,
-			"kind": e.kind if (scanned or e.kind in ["waypoint", "mine", "skip", "diner", "asteroid", "beacon"]) else "?",
-			"name": e.name if scanned else "Unknown contact", "age": w.t - float(e.scan) if scanned else 0.0}
-		if scanned:
-			item["fac"] = e.fac
-			item["hp"] = 100.0 * float(e.hp) / maxf(1.0, float(e.hpmax)) if float(e.hpmax) < 5000.0 else 100.0
-			if e.kind == "bastion":
-				item["weak"] = w.weak_pos(e) - s.pos
-		if e.kind == "bastion" and e.state == "telegraph":
-			tele.append({"p": rel, "ang": e.ang})
-		contacts.append(item)
-	var quality: float = 0.0
-	var hail: Dictionary = {}
-	if not w.hails.is_empty():
-		var h: Dictionary = w.hails[0]
-		quality = clampf(1.0 - absf(float(w.comms["freq"]) - float(h["freq"])) / 0.3, 0.0, 1.0)
-		hail = {"from": h.from, "q": quality, "tuned": quality > 0.87, "ttl": float(h["ttl"]) - float(h.t)}
-	var sc_e: Dictionary = w.find(int(w.scan["target"]))
-	return {"range": rng_m, "heading": s.heading, "pos": s.pos, "contacts": contacts, "incoming": incoming, "tele": tele,
-		"mirror": mirror, "scan": {"target": w.scan["target"], "progress": w.scan["progress"], "on": w.scan["on"],
-			"name": sc_e.name if not sc_e.is_empty() else ""}, "freq": w.comms["freq"], "hail": hail,
-		"ping_t": w.ping_t, "ping_cd": w.ping_cd, "iscan_cd": w.iscan_cd, "reveal_t": w.reveal_t, "view": w.view_dir,
-		"lock": w.lock_id, "pf": s.pf("sensors"), "faults": faults_for(w, "sensors"), "beacons": s.beacons,
-		"enc": w.enc.station_data("sensors") if w.enc != null else {}}
+		blips.append({"id": e.id, "x": snappedf(to.x, 0.1), "y": snappedf(to.y, 0.1), "kind": _kind(e), "name": _name(e),
+			"scanned": e.scanned, "hostile": e.hostile and e.scanned, "weak": e.weak_known, "dist": snappedf(to.length(), 0.1)})
+	var comms: Dictionary = {}
+	if w.feat("comms") and not w.hail.is_empty():
+		comms = {"from": w.hail.from, "signal": snappedf(float(w.hail.get("signal", 0.0)), 0.01), "lock": snappedf(float(w.hail.lock_t), 0.01),
+			"heard": w.hail.heard, "text": str(w.hail.text) if w.hail.heard else ""}
+	return {"ok": ok, "range": World.RADAR_RANGE, "blips": blips if ok else [], "selected": w.scan_target, "scanning": w.scanning,
+		"prog": snappedf(w.scan_prog, 0.01), "freq": w.comms_freq, "comms": comms}
 
-static func ops(w: World) -> Dictionary:
+static func shields(w: World) -> Dictionary:
 	var s: Ship = w.ship
-	var trac: Array = []
-	var tr_range: float = 70.0 + 30.0 * s.pf("ops") * s.eff("OPSB")
+	var tr: Dictionary = {}
+	if w.feat("tractor"):
+		var best: Dictionary = {}
+		var bd: float = 99999.0
+		for e in w.ents:
+			if e.alive and e.tractor:
+				var d: float = e.pos.distance_to(s.pos)
+				if d < bd:
+					bd = d
+					best = e
+		tr = {"on": s.tractor_on, "ok": s.ok("tractor"), "range": World.TRACTOR_RANGE,
+			"nearest": str(best.get("name", "")), "dist": snappedf(bd, 1.0) if not best.is_empty() else -1.0, "pulling": s.tractor_target >= 0}
+	var pud: Dictionary = {}
+	if w.feat("pudding"):
+		pud = {"mood": snappedf(s.pud_mood, 0.1), "out": s.pud_out, "snacks": s.snacks, "tin": snappedf(s.tin_prog, 0.01), "petting": s.petting}
+	var hits: Array = []
+	for f in w.fx:
+		if f.kind in ["block", "hit"] and w.t - float(f.t) < 0.8:
+			var rel: float = K.wrap_pi((Vector2(f.x, f.y) - s.pos).angle() - s.heading)
+			hits.append({"rel": snappedf(rel, 0.01), "blocked": f.kind == "block", "age": snappedf(w.t - float(f.t), 0.01)})
+	var stuck: Array = []
 	for e in w.ents:
-		if e.dead:
-			continue
-		if e.kind in ["skip", "pod", "debris", "freighter", "beacon"]:
-			var d: float = e.pos.distance_to(s.pos)
-			if d < 400.0:
-				trac.append({"id": e.id, "name": e.name, "kind": e.kind, "d": d, "rel": (e.vel - s.vel).length(), "p": e.pos - s.pos})
-	trac.sort_custom(func(a, b): return a.d < b.d)
-	var cargo: Array = []
-	for c in s.cargo:
-		cargo.append({"name": c.name, "integrity": c.integrity, "lost": c.get("lost", 0)})
-	var damaged: Array = []
-	for mid in s.mod_order:
-		var mm: Dictionary = s.modules[mid]
-		if mm.hp < 90.0 and mm.fire <= 0.0:
-			damaged.append({"id": mid, "label": mm.label, "hp": mm.hp})
-	return {"damaged": damaged, "shield": s.shield.duplicate(), "shield_w": s.shield_w.duplicate(), "tractor": w.tractor_id, "tractor_range": tr_range,
-		"pud": {"mood": s.pud["mood"], "loose": s.pud["loose"], "at": s.pud["at"], "music": s.pud["music"],
-			"aboard": s.pud["aboard"], "pat_cd": s.pud["pat_cd"], "snack_cd": s.pud["snack_cd"], "warn": s.pud["warn"]},
-		"snacks": s.snacks, "cargo": cargo, "secured": s.cargo_secured, "bot_job": s.bot_job, "bot_progress": s.bot_progress,
-		"tractables": trac.slice(0, 8), "faults": faults_for(w, "ops"), "threat": w.weakest_threat_facing(),
-		"pf": s.pf("shields"), "heading": s.heading, "has_threat": not w.hostiles().is_empty() or not w.of_kind("ebullet").is_empty() or not w.of_kind("eshell").is_empty(), "enc": w.enc.station_data("ops") if w.enc != null else {}}
+		if e.alive and e.latched:
+			stuck.append(snappedf(float(e.rel), 0.01))
+	return {"dir": s.shield_dir, "ok": s.ok("shield"), "hits": hits, "tractor": tr, "pudding": pud, "stuck": stuck}
 
-static func dc(w: World) -> Dictionary:
+static func engineer(w: World) -> Dictionary:
 	var s: Ship = w.ship
-	var mods: Array = []
-	for id in s.mod_order:
-		var m: Dictionary = s.modules[id]
-		mods.append({"id": id, "label": m.label, "gx": m.gx, "gy": m.gy, "state": s.mod_state(id), "hp": m.hp,
-			"fire": m.fire > 0.0, "breach": m.breach, "fault": m.fault, "nopower": not s.conduit_ok(m.conduit),
-			"work": m.work, "task": w.target_task("mod:" + id), "owner": m.owner, "conduit": m.conduit,
-			"mash": w.mash.get("mod:" + id, 0.0), "patched": m.patched, "warn": m.warn > 0.0})
-	var cons: Dictionary = {}
-	for c in K.CONDUITS:
-		var cd: Dictionary = s.conduits[c]
-		var known: bool = (not cd.hidden) or w.reveal_t > 0.0
-		cons[c] = {"cut": cd.cut and known, "unknown": cd.cut and not known, "work": cd.work, "iso": s.isolate[c], "zap": cd.zap,
-			"task": w.target_task("con:" + c), "trace": w.target_task("trc:" + c), "tprog": w.trace_prog.get(c, 0.0),
-			"hidden_cut": cd.cut and cd.hidden}
-	return {"mods": mods, "cons": cons, "pud_at": s.pud["at"] if s.pud["loose"] else "", "scram": s.scram_t > 0.0}
+	var systems: Dictionary = {}
+	for id in Ship.SYSTEMS:
+		systems[id] = {"state": str(s.sys[id].state), "hp": snappedf(float(s.sys[id].hp), 0.1)}
+	var stuck: Array = []
+	for e in w.ents:
+		if e.alive and e.latched:
+			stuck.append(s.side_system(float(e.rel)))
+	var pw: Dictionary = {}
+	if w.feat("power"):
+		pw = {"bars": s.power, "draw": snappedf(s.draw, 0.01), "cap": Ship.POWER_CAP, "overload": snappedf(s.overload, 0.1),
+			"blackout": snappedf(s.blackout_t, 0.1)}
+	return {"systems": systems, "selected": s.repair_target, "repairing": s.repairing, "prog": snappedf(s.repair_prog, 0.01),
+		"power": pw, "pudding_room": s.pud_room if (w.feat("pudding") and s.pud_out) else "", "stuck": stuck, "stuck_rel": _stuck(w)}
+
+# ---------------------------------------------------------------- the captain
 
 static func captain(w: World) -> Dictionary:
 	var s: Ship = w.ship
+	var m: Mission = w.mission
 	var ents: Array = []
-	var view_ang: float = s.heading
-	match w.view_dir:
-		"aft":
-			view_ang = s.heading + PI
-		"port":
-			view_ang = s.heading - PI / 2.0
-		"stbd":
-			view_ang = s.heading + PI / 2.0
-		"target":
-			var le: Dictionary = w.find(w.lock_id)
-			if not le.is_empty():
-				view_ang = (le.pos - s.pos).angle()
 	for e in w.ents:
-		if e.dead:
+		if not e.alive or e.ai == "thrown" and false:
 			continue
-		var d: float = e.pos.distance_to(s.pos)
-		if e.kind == "mine":
-			if d > 60.0:
-				continue
-		elif d > 3200.0 and e.kind not in ["magnificence", "bastion", "diner", "waypoint"]:
-			continue
-		var item: Dictionary = {"id": e.id, "k": e.kind, "x": e.pos.x, "y": e.pos.y, "a": e.ang, "r": e.r, "n": e.name}
-		if e.kind in ["grabber", "snatch"]:
-			item["st"] = e.state
-		if e.kind == "bastion":
-			item["st"] = e.state
-		if e.kind == "skip" and e.name == "Warm Skip":
-			item["special"] = true
-		if e.kind == "torp":
-			item["armed"] = e.armed
-		ents.append(item)
-	var smoke: Array = []
-	var fire_n: int = 0
-	for id in s.mod_order:
-		var m: Dictionary = s.modules[id]
-		if m.fire > 0.0 or s.mod_state(id) >= 2:
-			smoke.append([m.lx, m.ly, 1.0 if m.fire > 0.0 else 0.5])
-		if m.fire > 0.0:
-			fire_n += 1
-	var meters: Array = []
-	var sheet: Array = []
-	if w.enc != null:
-		var cd: Dictionary = w.enc.captain_data()
-		meters = cd.get("meters", [])
-		sheet = cd.get("sheet", [])
-	return {"x": s.pos.x, "y": s.pos.y, "h": s.heading, "vx": s.vel.x, "vy": s.vel.y, "av": s.angvel, "view_ang": view_ang,
-		"view": w.view_dir, "ents": ents, "shake": s.shake, "flash": s.hit_flash, "smoke": smoke, "fires": fire_n,
-		"note": w.enc.captain_note() if w.enc != null else "", "meters": meters, "sheet": sheet,
-		"comms": w.captain_comms.duplicate(), "fog": s.coolant_leak, "bridge_hp": s.modules["BRDG"].hp,
-		"hail_wait": not w.hails.is_empty(), "accel": s.accel_mag, "lock": w.lock_id,
-		"crew": {"pud_mood": s.pud["mood"], "loose": s.pud["loose"]}, "speed": s.speed(),
-		"shield": s.shield.duplicate(), "dock": w.enc.station_data("helm").get("dock", {}) if w.enc != null else {}}
+		ents.append({"id": e.id, "kind": _kind(e) if e.kind != "ring" else "ring", "name": _name(e), "pos": _v(e.pos),
+			"heading": snappedf(float(e.heading), 0.01), "hostile": e.hostile and e.scanned, "note": e.note, "tag": e.tag,
+			"charge": snappedf(float(e.charge), 0.01), "latched": e.latched, "weak": e.weak_known, "r": e.r,
+			"thrown": e.ai == "thrown", "hp": snappedf(e.hp / maxf(1.0, e.hp_max), 0.01)})
+	var shots: Array = []
+	for sh in w.shots:
+		shots.append({"pos": _v(sh.pos), "from": sh.from, "kind": sh.kind, "dir": snappedf(sh.vel.angle(), 0.01)})
+	var systems: Dictionary = {}
+	for id in Ship.SYSTEMS:
+		systems[id] = {"state": str(s.sys[id].state), "hp": snappedf(float(s.sys[id].hp), 0.1)}
+	var gp: Variant = m.goal_pos() if m != null else null
+	return {
+		"ship": {"pos": _v(s.pos), "heading": snappedf(s.heading, 0.001), "vel": _v(s.vel), "speed": snappedf(s.speed(), 0.1),
+			"shield": s.shield_dir, "shield_ok": s.ok("shield"), "aim": s.aim, "tractor": s.tractor_target, "rolling": s.roll_t > 0.0},
+		"ents": ents, "shots": shots, "fx": w.fx.duplicate(), "_t": w.t, "_feat_tractor": w.feat("tractor"),
+		"goal": _v(gp) if gp != null else [],
+		"steps": m.step_list() if m != null else [],
+		"board": {"systems": systems, "engine_heat": snappedf(s.engine_heat, 0.1), "gun_heat": snappedf(s.gun_heat, 0.1),
+			"overload": snappedf(s.overload, 0.1), "draw": snappedf(s.draw, 0.01), "cap": Ship.POWER_CAP, "blackout": s.blackout_t > 0.0,
+			"pud_mood": snappedf(s.pud_mood, 0.1), "pud_out": s.pud_out, "pud_room": s.pud_room, "torp": s.torp,
+			"stuck": _stuck(w)},
+		"crew": crew_lines(w),
+		"warnings": forecasts(w),
+	}
+
+static func _stuck(w: World) -> Array:
+	var out: Array = []
+	for e in w.ents:
+		if e.alive and e.latched:
+			out.append(snappedf(float(e.rel), 0.01))
+	return out
+
+static func _turn_words(v: float) -> String:
+	if absf(v) < 0.08:
+		return "Straight"
+	var side: String = "left" if v < 0.0 else "right"
+	if absf(v) > 0.8:
+		return "HARD " + side
+	if absf(v) > 0.4:
+		return "Turning " + side
+	return "Gently " + side
+
+static func crew_lines(w: World) -> Dictionary:
+	## per crew member: a short "what they're doing" line, a short warning, and an alert level (0 fine, 1 heads-up, 2 trouble)
+	var s: Ship = w.ship
+	var out: Dictionary = {}
+	# helm
+	var hw: String = ""
+	var ha: int = 0
+	if not s.ok("bridge"):
+		hw = "STEERING BROKEN"
+		ha = 2
+	elif s.throttle > 0.05 and s.engines_working() == 1:
+		hw = "ship pulls %s" % ("left" if not s.ok("engine_p") else "right")
+		ha = 1
+	elif w.shake_t > 0.3:
+		hw = "spinning!"
+		ha = 1
+	out["helm"] = {"text": "%s · %03d°" % [_turn_words(s.wheel), K.bearing_deg(s.heading)], "warn": hw, "alert": ha}
+	# engines
+	var ew: String = ""
+	var ea: int = 0
+	if s.engines_working() < 2:
+		ew = "ONE ENGINE DOWN" if s.engines_working() == 1 else "BOTH ENGINES DOWN"
+		ea = 2
+	elif w.feat("heat") and s.engine_heat > 60.0:
+		ew = "engines %d%% HOT" % int(s.engine_heat)
+		ea = 2 if s.engine_heat > 80.0 else 1
+	elif s.boost and w.feat("boost"):
+		ew = "BOOSTING"
+		ea = 1
+	out["engines"] = {"text": "Throttle %d%% · %d m/s" % [int(round(s.throttle * 100.0)), int(s.speed())], "warn": ew, "alert": ea}
+	# weapons
+	var wt: String = "Gun at %d o'clock%s" % [K.clock(s.aim), " · FIRING" if s.firing else ""]
+	var ww: String = ""
+	var wa: int = 0
+	if not s.ok("gun"):
+		ww = "GUN BROKEN"
+		wa = 2
+	elif w.feat("heat") and s.gun_heat > 60.0:
+		ww = "gun %d%% HOT" % int(s.gun_heat)
+		wa = 2 if s.gun_heat > 80.0 else 1
+	elif w.feat("torpedo") and s.torp == "ready":
+		ww = "torpedo READY"
+		wa = 1
+	elif w.feat("torpedo") and s.torp == "loading":
+		ww = "loading torpedo"
+	out["weapons"] = {"text": wt, "warn": ww, "alert": wa}
+	# sensors
+	var st: String = "Idle"
+	if w.scanning and w.scan_target >= 0:
+		st = "Scanning · %d%%" % int(w.scan_prog * 100.0)
+	var sw: String = ""
+	var sa: int = 0
+	var unknown: int = 0
+	for e2 in w.ents:
+		if e2.alive and not e2.scanned and e2.ai != "thrown":
+			unknown += 1
+	if not s.ok("sensors"):
+		sw = "SENSORS BROKEN"
+		sa = 2
+	elif w.feat("comms") and not w.hail.is_empty():
+		sw = "HAS A MESSAGE!" if w.hail.heard else "tuning comms %d%%" % int(float(w.hail.get("signal", 0.0)) * 100.0)
+		sa = 1
+	elif unknown > 0:
+		sw = "%d unknown to scan" % unknown
+		sa = 1
+	out["sensors"] = {"text": st, "warn": sw, "alert": sa}
+	# shields
+	var sht: String = "Shield at %d o'clock" % K.clock(s.shield_dir)
+	if s.tractor_on and w.feat("tractor"):
+		sht += " · PULLING"
+	var shw: String = ""
+	var sha: int = 0
+	if not s.ok("shield"):
+		shw = "SHIELD BROKEN"
+		sha = 2
+	elif w.feat("pudding") and s.pud_out:
+		shw = "calling Pudding back" if s.tin else "PUDDING ESCAPED"
+		sha = 2
+	elif w.feat("pudding") and s.petting:
+		shw = "petting Pudding"
+	out["shields"] = {"text": sht, "warn": shw, "alert": sha}
+	# engineer
+	var gt: String = "Idle"
+	if s.repair_target != "" and s.repairing:
+		gt = "%s %s · %d%%" % ["Fire in" if s.on_fire(s.repair_target) else "Fixing", Ship.SYS_NAME[s.repair_target].to_lower(),
+			int(s.repair_prog * 100.0)]
+	var broken: int = 0
+	for id in Ship.SYSTEMS:
+		if s.broken(id):
+			broken += 1
+	var gw: String = ""
+	var ga: int = 0
+	if broken > 0:
+		gw = "%d thing%s broken" % [broken, "" if broken == 1 else "s"]
+		ga = 2 if not s.repairing else 1
+	elif w.feat("power"):
+		gw = "power %d / %d / %d" % [int(s.power.engines), int(s.power.weapons), int(s.power.shields)]
+	out["engineer"] = {"text": gt, "warn": gw, "alert": ga}
+	return out
+
+static func forecasts(w: World) -> Array:
+	## the captain's cues: [{text, level, who}] most urgent first
+	var s: Ship = w.ship
+	var out: Array = []
+	if s.blackout_t > 0.0:
+		out.append({"text": "BLACKOUT! Power back in %ds" % int(ceil(s.blackout_t)), "level": 3, "who": "engineer"})
+	var inc: Array = w.incoming()
+	var worst: Dictionary = {}
+	for i in inc:
+		if not i.covered and (worst.is_empty() or i.eta < worst.eta):
+			worst = i
+	if not worst.is_empty():
+		out.append({"text": "Incoming from %d o'clock! Shield is at %d" % [K.clock(worst.rel), K.clock(s.shield_dir)], "level": 3, "who": "shields"})
+	for e in w.ents:
+		if e.alive and float(e.charge) > 0.0 and e.ai in ["patrol", "cruiser"]:
+			var rel: float = K.wrap_pi((e.pos - s.pos).angle() - s.heading)
+			out.append({"text": "%s charging at %d o'clock!%s" % [_name(e), K.clock(rel), " ROLL!" if w.feat("roll") else ""], "level": 3,
+				"who": "helm" if w.feat("roll") else "shields"})
+	var oe: float = w.overload_eta()
+	if oe >= 0.0 and oe < 10.0:
+		out.append({"text": "Reactor overload in %ds! (drawing %.1f of %d)" % [int(ceil(oe)), s.draw, int(Ship.POWER_CAP)], "level": 3, "who": "engineer"})
+	var he: float = w.engine_heat_eta()
+	if he >= 0.0 and he < 10.0:
+		out.append({"text": "Engines overheat in %ds" % int(ceil(he)), "level": 2 if he > 4.0 else 3, "who": "engines"})
+	if w.feat("heat") and s.gun_heat > 72.0 and s.firing:
+		out.append({"text": "Gun about to jam (%d%% hot)" % int(s.gun_heat), "level": 2, "who": "weapons"})
+	for id in Ship.SYSTEMS:
+		if s.on_fire(id):
+			out.append({"text": "FIRE in the %s!" % Ship.SYS_NAME[id].to_lower(), "level": 3, "who": "engineer"})
+	for id2 in Ship.SYSTEMS:
+		if str(s.sys[id2].state) == "broken":
+			out.append({"text": "%s is broken" % Ship.SYS_NAME[id2], "level": 2, "who": "engineer"})
+	for rel in _stuck(w):
+		out.append({"text": "Grabber stuck on us at %d o'clock" % K.clock(float(rel)), "level": 2, "who": "helm"})
+	if w.feat("pudding"):
+		if s.pud_out:
+			out.append({"text": "Pudding escaped! Now in the %s" % Ship.SYS_NAME[s.pud_room].to_lower(), "level": 2, "who": "shields"})
+		elif s.pud_mood < 30.0:
+			out.append({"text": "Pudding is upset (%d%%)" % int(s.pud_mood), "level": 1, "who": "shields"})
+	if s.hull < 35.0:
+		out.append({"text": "Hull critical: %d%%" % int(s.hull), "level": 2, "who": ""})
+	for e2 in w.ents:
+		if e2.alive and e2.kind == "mine" and e2.scanned and e2.pos.distance_to(s.pos) < 170.0:
+			var rel2: float = K.wrap_pi((e2.pos - s.pos).angle() - s.heading)
+			out.append({"text": "Mine close at %d o'clock!" % K.clock(rel2), "level": 2, "who": "helm"})
+	if w.feat("comms") and not w.hail.is_empty() and not w.hail.heard:
+		out.append({"text": "Incoming hail: Sensors, tune in!", "level": 1, "who": "sensors"})
+	var unknown: int = 0
+	for e3 in w.ents:
+		if e3.alive and not e3.scanned and e3.ai != "thrown":
+			unknown += 1
+	if unknown > 0:
+		out.append({"text": "%d unknown contact%s" % [unknown, "" if unknown == 1 else "s"], "level": 1, "who": "sensors"})
+	out.sort_custom(func(a, b): return int(a.level) > int(b.level))
+	return out.slice(0, 6)

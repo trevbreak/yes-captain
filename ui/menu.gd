@@ -1,129 +1,141 @@
 class_name MenuUI
 extends Control
-## Title screen: logo, the ship, the crew, and three ways to play.
+## The title card: a sunburst, the logo, the ship bobbing about, the crew, and a box to start a game.
 
-signal host_pressed(name: String)
-signal solo_pressed(name: String)
-signal join_pressed(name: String, ip: String, port: int)
+signal host_pressed(pname: String)
+signal solo_pressed(pname: String)
+signal join_pressed(pname: String, ip: String, port: int)
 signal quit_pressed
 
 var name_edit: LineEdit
 var ip_edit: LineEdit
-var port_edit: LineEdit
 var msg: Label
-var t: float = 0.0
-var quote_i: int = -1
-var igor_bubble: HBoxContainer
 var ship: TextureRect
-var ship_base_y: float = 0.0
+var igor_bub: HBoxContainer
+var _t: float = 0.0
+var _igor_i: int = 0
 
-const QUOTES: Array = [
-	"IGOR will be doing all real work. You may touch buttons.",
-	"On Foundry, national sport is standing still. IGOR's uncle won gold medal.",
-	"Creature is loose again. Creature has no discipline. Like human.",
-	"Human must sleep eight hours. Very inefficient. IGOR sleeps zero hours.",
-	"Overlord is now Furious. Last time IGOR saw face this red, was warning light.",
+const QUIPS: Array = [
+	"IGOR welcomes you. IGOR has low expectations. Please meet them.",
+	"The captain sees everything and touches nothing. Like IGOR's manager.",
+	"One control each. Talk constantly. IGOR will be listening.",
+	"Pudding says hello. Pudding cannot talk. IGOR is translating.",
 ]
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	UIK.space_bg(self)
-	var root: HBoxContainer = UIK.hbox(30)
-	var m: MarginContainer = UIK.margin(root, 36)
+	UIK.bg(self)
+	var sb: Sunburst = Sunburst.new()
+	sb.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	add_child(sb)
+	var row: HBoxContainer = UIK.hbox(20)
+	var m: MarginContainer = UIK.margin(row, 28)
 	m.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(m)
-	# ---- left: logo + menu card
-	var left: VBoxContainer = UIK.vbox(14)
-	left.custom_minimum_size = Vector2(540, 0)
-	left.alignment = BoxContainer.ALIGNMENT_CENTER
-	root.add_child(left)
-	var logo: Label = UIK.title("YES, CAPTAIN!", 76, K.pal("yellow"), K.pal("plum").darkened(0.35))
-	left.add_child(logo)
-	left.add_child(UIK.wrapped(UIK.label("One captain can see but not touch. Everyone else can touch but not see.", 20, Color(1, 1, 1, 0.85))))
-	var w: Array = UIK.window("READY FOR DUTY?", "blue", "crew", 16)
-	left.add_child(w[0])
-	var body: VBoxContainer = w[1]
-	var nr: HBoxContainer = UIK.hbox(10)
-	body.add_child(nr)
-	nr.add_child(UIK.heading("Your name", 17))
-	name_edit = LineEdit.new()
-	name_edit.text = OS.get_environment("USER").capitalize() if OS.get_environment("USER") != "" else "Crew"
-	name_edit.max_length = 16
-	name_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	nr.add_child(name_edit)
-	var host: Button = UIK.btn("Host a game  (friends join over the LAN)", "green", func(): host_pressed.emit(name_edit.text), "play")
-	host.custom_minimum_size.y = 54
-	body.add_child(host)
-	var solo: Button = UIK.btn("Play with a robot crew", "blue", func(): solo_pressed.emit(name_edit.text), "robot")
-	solo.custom_minimum_size.y = 54
-	body.add_child(solo)
-	var jr: HBoxContainer = UIK.hbox(8)
-	body.add_child(jr)
-	ip_edit = LineEdit.new()
-	ip_edit.placeholder_text = "Host address, e.g. 192.168.1.20"
-	ip_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	jr.add_child(ip_edit)
-	port_edit = LineEdit.new()
-	port_edit.text = str(K.PORT_DEFAULT)
-	port_edit.custom_minimum_size = Vector2(84, 0)
-	jr.add_child(port_edit)
-	jr.add_child(UIK.btn("Join", "orange", func(): join_pressed.emit(name_edit.text, ip_edit.text.strip_edges(), int(port_edit.text)), "crew"))
-	var br: HBoxContainer = UIK.hbox(8)
-	body.add_child(br)
-	var snd: Button = UIK.toggle_btn("Sound", "neutral", func(on: bool): Sfx.enabled = on)
-	snd.button_pressed = Sfx.enabled
-	br.add_child(snd)
-	var tts: Button = UIK.toggle_btn("IGOR's voice", "neutral", func(on: bool): Sfx.tts_on = on)
-	tts.button_pressed = Sfx.tts_on
-	br.add_child(tts)
-	br.add_child(UIK.btn("Fullscreen", "neutral", _toggle_fs))
-	br.add_child(UIK.spacer(true))
-	br.add_child(UIK.btn("Quit", "red", func(): quit_pressed.emit()))
-	msg = UIK.label("", 17, K.pal("yellow"))
-	left.add_child(msg)
-	# ---- right: the ship, the crew, IGOR
-	var right: VBoxContainer = UIK.vbox(16)
-	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	right.alignment = BoxContainer.ALIGNMENT_CENTER
-	root.add_child(right)
-	var ship_box: Control = Control.new()
-	ship_box.custom_minimum_size = Vector2(520, 330)
-	ship_box.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	right.add_child(ship_box)
-	ship = TextureRect.new()
-	ship.texture = UIK.tex("art_ship", 1040)
-	ship.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	ship.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	ship.size = Vector2(520, 325)
-	ship_box.add_child(ship)
-	var crew_row: HBoxContainer = UIK.hbox(-14)
-	crew_row.alignment = BoxContainer.ALIGNMENT_CENTER
-	right.add_child(crew_row)
+	var left: VBoxContainer = UIK.vbox(4)
+	left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(left)
+	left.add_child(UIK.title("YES, CAPTAIN!", 92, UIK.c("red")))
+	left.add_child(UIK.head("A BRIDGE SIMULATOR FOR LOUD FRIENDS", 24, UIK.ink()))
+	var mid: Control = Control.new()
+	mid.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	left.add_child(mid)
+	ship = UIK.pic("ship_ours", Vector2(190, 247))
+	ship.pivot_offset = Vector2(95, 123)
+	ship.rotation = deg_to_rad(80)
+	mid.add_child(ship)
+	var crew: HBoxContainer = UIK.hbox(-14)
+	left.add_child(crew)
 	for s in K.SEATS:
-		var pr: TextureRect = UIK.portrait(str(K.SEAT_INFO[s].portrait), 76)
-		pr.tooltip_text = "%s (%s)" % [K.SEAT_INFO[s].persona, K.seat_name(s)]
-		pr.mouse_filter = Control.MOUSE_FILTER_PASS
-		crew_row.add_child(pr)
-	igor_bubble = UIK.speech(QUOTES[0], "igor", "IGOR, ship's robot", 72)
-	igor_bubble.custom_minimum_size = Vector2(520, 0)
-	igor_bubble.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	right.add_child(igor_bubble)
+		var p: TextureRect = UIK.portrait(s, 88)
+		p.tooltip_text = "%s: %s" % [K.seat_name(s), K.persona(s)]
+		p.mouse_filter = Control.MOUSE_FILTER_PASS
+		crew.add_child(p)
+	crew.add_child(UIK.portrait("pudding", 70))
+	var right: VBoxContainer = UIK.vbox(14)
+	right.custom_minimum_size = Vector2(430, 0)
+	right.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_child(right)
+	var w: Array = UIK.window("ALL ABOARD", "navy", "captain")
+	right.add_child(w[0])
+	var b: VBoxContainer = w[1]
+	b.add_theme_constant_override("separation", 12)
+	b.add_child(UIK.head("YOUR NAME", 18, K.pal("ink_soft")))
+	name_edit = LineEdit.new()
+	name_edit.text = _default_name()
+	name_edit.max_length = 16
+	b.add_child(name_edit)
+	b.add_child(UIK.btn("Play with a robot crew", "green", func(): solo_pressed.emit(name_edit.text), "robot", 24))
+	b.add_child(UIK.btn("Host a LAN game", "blue", func(): host_pressed.emit(name_edit.text), "crew", 24))
+	var jr: HBoxContainer = UIK.hbox(8)
+	b.add_child(jr)
+	ip_edit = LineEdit.new()
+	ip_edit.placeholder_text = "Host address"
+	ip_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	ip_edit.text_submitted.connect(func(_t2: String): _join())
+	jr.add_child(ip_edit)
+	jr.add_child(UIK.btn("Join", "orange", _join, "play", 22))
+	msg = UIK.para("", 20, UIK.c("red"))
+	b.add_child(msg)
+	var opts: HBoxContainer = UIK.hbox(8)
+	right.add_child(opts)
+	var snd: Button = UIK.toggle("Sound", "green", func(on: bool): UIK.set_sound(on), "speaker", 18)
+	snd.button_pressed = true
+	opts.add_child(snd)
+	var vo: Button = UIK.toggle("IGOR voice", "green", func(on: bool): UIK.set_voice(on), "robot", 18)
+	vo.button_pressed = true
+	opts.add_child(vo)
+	opts.add_child(UIK.btn("Full screen", "cream", func():
+		var full: bool = DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN
+		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED if full else DisplayServer.WINDOW_MODE_FULLSCREEN), "", 18))
+	opts.add_child(UIK.btn("Quit", "red", func(): quit_pressed.emit(), "x", 18))
+	igor_bub = UIK.speech(QUIPS[0], "igor", "IGOR", 76, 21)
+	right.add_child(igor_bub)
 
-func _toggle_fs() -> void:
-	var fs: bool = DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN
-	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED if fs else DisplayServer.WINDOW_MODE_FULLSCREEN)
+func _default_name() -> String:
+	var n: String = OS.get_environment("USER")
+	return n.capitalize() if n != "" else "Captain"
 
-func show_msg(tt: String) -> void:
-	msg.text = tt
+func _join() -> void:
+	var t: String = ip_edit.text.strip_edges()
+	var port: int = K.PORT_DEFAULT
+	if ":" in t:
+		port = int(t.get_slice(":", 1))
+		t = t.get_slice(":", 0)
+	join_pressed.emit(name_edit.text, t, port)
 
-func _process(delta: float) -> void:
-	t += delta
-	if ship != null:
-		ship.position.y = sin(t * 1.2) * 8.0
-		ship.rotation = sin(t * 0.9) * 0.015
-	var qi: int = int(t / 7.0) % QUOTES.size()
-	if qi != quote_i:
-		quote_i = qi
-		var l: Label = igor_bubble.find_child("text", true, false)
-		if l != null:
-			l.text = QUOTES[qi]
+func show_msg(t: String) -> void:
+	msg.text = t
+
+func _process(dt: float) -> void:
+	if not visible:
+		return
+	_t += dt
+	var mid: Control = ship.get_parent()
+	ship.position = Vector2(mid.size.x * 0.5 - 95.0 + sin(_t * 0.7) * 30.0, mid.size.y * 0.5 - 123.0 + sin(_t * 1.6) * 10.0)
+	ship.rotation = deg_to_rad(80.0 + sin(_t * 1.1) * 6.0)
+	if int(_t / 7.0) != _igor_i:
+		_igor_i = int(_t / 7.0)
+		(igor_bub.find_child("text", true, false) as Label).text = QUIPS[_igor_i % QUIPS.size()]
+
+class Sunburst extends Control:
+	## slowly turning cartoon rays behind everything
+	var _a: float = 0.0
+
+	func _ready() -> void:
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	func _process(dt: float) -> void:
+		_a += dt * 0.04
+		queue_redraw()
+
+	func _draw() -> void:
+		var c: Vector2 = Vector2(size.x * 0.32, size.y * 0.55)
+		var r: float = size.length()
+		var n: int = 24
+		for i in n:
+			if i % 2:
+				continue
+			var a0: float = _a + i * TAU / n
+			var a1: float = a0 + TAU / n
+			draw_colored_polygon(PackedVector2Array([c, c + Vector2.from_angle(a0) * r, c + Vector2.from_angle(a1) * r]), Color(1, 0.97, 0.88, 0.35))

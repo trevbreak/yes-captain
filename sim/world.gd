@@ -1,854 +1,729 @@
 class_name World
 extends RefCounted
-## The authoritative simulation: one ship, a bag of entities, an encounter and a Chaos Director.
-## Pure logic, no nodes, so it can run headless and be soak-tested.
+## The 2D simulation. Pure rules, no nodes. The mission switches mechanics on through `features`.
 
-var rng: RandomNumberGenerator = RandomNumberGenerator.new()
+const RADAR_RANGE: float = 520.0
+const SHIP_R: float = 20.0
+const BULLET_SPEED: float = 340.0
+const TRACTOR_RANGE: float = 150.0
+const SCAN_TIME: float = 1.6
+
 var t: float = 0.0
-var ship: Ship
+var ship: Ship = Ship.new()
 var ents: Array = []
+var shots: Array = []
+var fx: Array = []                # short-lived visual events for renderers: {kind, pos, t}
+var events: Array = []            # [type, data] drained by the host
+var features: Dictionary = {}
+var mission: Mission = null
+var rng: RandomNumberGenerator = RandomNumberGenerator.new()
 var next_id: int = 1
-var enc: Encounter = null
-var director: Director = null
-var events: Array = []  # [type, data] consumed by the host
-
-var temper: int = 1
-var torp_bonus: float = 1.0
-var sensor_bonus: float = 1.0
-var thrupp_title: String = "Admiral"
-var damages_billed: float = 0.0
-var last_input: Dictionary = {}
 var stats: Dictionary = {}
 
-# sensors / comms
-var scan: Dictionary = {"target": -1, "progress": 0.0, "on": false}
-var comms: Dictionary = {"freq": 0.5, "vel": 0.0, "target": 0.5, "tuned_t": 0.0}
-var hails: Array = []
-var captain_comms: Array = []
-var ping_t: float = 0.0
-var ping_cd: float = 0.0
-var reveal_t: float = 0.0
-var iscan_cd: float = 0.0
-var view_dir: String = "fwd"
-var lock_id: int = -1
-var lock_weak: bool = false
-var track: Dictionary = {"TUR_A": false, "TUR_B": false}
-var sel_turret: String = "TUR_A"
-var tractor_id: int = -1
-var paint: int = 0
-var stowed: bool = false
-var holds: Dictionary = {}  # actor -> {target, mode}
-var mash: Dictionary = {}   # target -> progress
-var shared_screen: String = ""
-var inverted: Dictionary = {}
-var last_actor: String = ""
-var mods: Array = []
-var dc_traces: Dictionary = {}
-var zap_events: Array = []
-var trace_prog: Dictionary = {}
-var load_hold: Dictionary = {}
-var arming: Dictionary = {}
+# sensors
+var scan_target: int = -1
+var scanning: bool = false
+var scan_prog: float = 0.0
+# comms (mission 5+)
+var comms_freq: float = 0.5
+var hail: Dictionary = {}         # {from, text, freq, heard, lock_t, signal}
+# grabber shake-off
+var shake_t: float = 0.0
+var bump_cd: float = 0.0
 
 func _init(seed_value: int = 0) -> void:
 	if seed_value != 0:
 		rng.seed = seed_value
 	else:
 		rng.randomize()
-	ship = Ship.new(rng)
-	director = Director.new(self)
 	reset_stats()
 
 func reset_stats() -> void:
-	stats = {"collisions": 0, "max_collision": 0.0, "spins": 0.0, "friendly_fire": 0, "near_miss": 0, "kills": 0,
-		"torps": 0, "shots": 0, "orders": 0, "fires_put_out": 0, "repairs": 0, "misjump": 0,
-		"inputs": {"helm": 0, "engines": 0, "power": 0, "weapons": 0, "sensors": 0, "ops": 0, "dc": 0},
-		"idle_max": {"helm": 0.0, "engines": 0.0, "power": 0.0, "weapons": 0.0, "sensors": 0.0, "ops": 0.0},
-		"blame": {"helm": 0, "engines": 0, "power": 0, "weapons": 0, "sensors": 0, "ops": 0}}
+	stats = {"shots": 0, "hits": 0, "blocked": 0, "hits_taken": 0, "repairs": 0, "scans": 0, "fires": 0, "breaks": 0, "dodges": 0,
+		"friendly_fire": 0, "overloads": 0, "escapes": 0}
 
-func emit(type: String, data: Dictionary = {}) -> void:
-	events.append([type, data])
+func clear() -> void:
+	ents.clear()
+	shots.clear()
+	fx.clear()
+	events.clear()
+	scan_target = -1
+	scanning = false
+	scan_prog = 0.0
+	hail = {}
+	shake_t = 0.0
+
+func feat(f: String) -> bool:
+	return bool(features.get(f, false))
+
+func emit(type: String, d: Dictionary = {}) -> void:
+	events.append([type, d])
+
+func add_fx(kind: String, p: Vector2, extra: Dictionary = {}) -> void:
+	var d: Dictionary = {"kind": kind, "x": p.x, "y": p.y, "t": t}
+	d.merge(extra, true)
+	fx.append(d)
 
 # ---------------------------------------------------------------- entities
 
+const KIND_INFO: Dictionary = {
+	"ring": {"r": 34.0, "name": "Ring", "shootable": false},
+	"buoy": {"r": 18.0, "name": "Buoy", "shootable": true, "hp": 10.0},
+	"target": {"r": 22.0, "name": "Practice target", "shootable": true, "hp": 10.0, "hostile": true},
+	"junk": {"r": 14.0, "name": "Junk", "shootable": true, "hp": 5.0},
+	"skip": {"r": 30.0, "name": "A skip", "shootable": false, "tractor": true},
+	"drone": {"r": 20.0, "name": "Hegemony drone", "shootable": true, "hp": 30.0, "hostile": true},
+	"grabber": {"r": 20.0, "name": "Grabber drone", "shootable": true, "hp": 30.0, "hostile": true},
+	"mine": {"r": 16.0, "name": "Mine", "shootable": true, "hp": 5.0, "hostile": true},
+	"cruiser": {"r": 70.0, "name": "Hegemony cruiser", "shootable": true, "hp": 100.0, "hostile": true},
+	"patrol": {"r": 30.0, "name": "Hegemony patrol", "shootable": true, "hp": 9999.0, "hostile": true},
+	"customs": {"r": 70.0, "name": "Customs post", "shootable": false},
+	"haven": {"r": 70.0, "name": "Haven", "shootable": false},
+	"diner": {"r": 70.0, "name": "Ma Gristle's Diner", "shootable": false},
+	"rock": {"r": 26.0, "name": "Space rock", "shootable": true, "hp": 20.0},
+	"pod": {"r": 14.0, "name": "Cargo pod", "shootable": false, "tractor": true},
+}
+
 func spawn(kind: String, p: Vector2, opts: Dictionary = {}) -> Dictionary:
-	var e: Dictionary = {"id": next_id, "kind": kind, "pos": p, "vel": Vector2.ZERO, "ang": 0.0, "angvel": 0.0,
-		"r": 5.0, "hp": 50.0, "hpmax": 50.0, "fac": "neu", "name": kind, "scan": -1000.0, "solid": false,
-		"radar": true, "vis": true, "t": 0.0, "dead": false, "state": "", "st": 0.0}
-	next_id += 1
-	match kind:
-		"asteroid":
-			e.merge({"r": rng.randf_range(8.0, 20.0), "solid": true, "hp": 9999.0, "hpmax": 9999.0, "name": "Asteroid", "mass": 400.0}, true)
-		"mine":
-			e.merge({"r": 3.0, "vis": false, "hp": 10.0, "name": "Mine", "fac": "heg"}, true)
-		"grabber":
-			e.merge({"r": 3.5, "hp": 30.0, "hpmax": 30.0, "fac": "heg", "name": "Grabber Drone", "state": "chase", "mass": 10.0}, true)
-		"snatch":
-			e.merge({"r": 4.5, "hp": 45.0, "hpmax": 45.0, "fac": "heg", "name": "Snatch Pod", "state": "chase", "mass": 15.0}, true)
-		"patrol":
-			e.merge({"r": 18.0, "hp": 220.0, "hpmax": 220.0, "fac": "heg", "name": "Hegemony Patrol", "solid": true, "mass": 3000.0}, true)
-		"bastion":
-			e.merge({"r": 40.0, "hp": 300.0, "hpmax": 300.0, "fac": "heg", "name": "Bastion Cruiser", "solid": true, "mass": 20000.0, "state": "idle", "fire_t": 4.0, "weak_hp": 100.0}, true)
-		"magnificence":
-			e.merge({"r": 120.0, "hp": 99999.0, "hpmax": 99999.0, "fac": "heg", "name": "The Magnificence", "solid": true, "mass": 200000.0, "fire_t": 5.0}, true)
-		"freighter":
-			e.merge({"r": 14.0, "hp": 120.0, "hpmax": 120.0, "fac": "free", "name": "Freighter", "solid": true, "mass": 2500.0}, true)
-		"diner":
-			e.merge({"r": 42.0, "hp": 9999.0, "hpmax": 9999.0, "fac": "free", "name": "Ma Gristle's Diner", "solid": true, "mass": 90000.0}, true)
-		"skip":
-			e.merge({"r": 4.0, "hp": 20.0, "hpmax": 20.0, "name": "Skip", "mass": 30.0}, true)
-		"pod":
-			e.merge({"r": 3.0, "hp": 15.0, "hpmax": 15.0, "name": "Escape Pod", "mass": 10.0}, true)
-		"debris":
-			e.merge({"r": 1.5, "hp": 5.0, "hpmax": 5.0, "name": "Debris", "radar": false}, true)
-		"waypoint":
-			e.merge({"r": 25.0, "hp": 1.0, "name": "Waypoint"}, true)
-		"beacon":
-			e.merge({"r": 2.0, "hp": 5.0, "name": "Decoy Beacon"}, true)
-		"bullet":
-			e.merge({"r": 1.0, "hp": 1.0, "fac": "free", "radar": false, "name": "Shot", "dmg": 15.0, "life": 2.5}, true)
-		"ebullet":
-			e.merge({"r": 1.2, "hp": 1.0, "fac": "heg", "radar": true, "name": "Enemy Shot", "dmg": 12.0, "life": 5.0}, true)
-		"eshell":
-			e.merge({"r": 2.5, "hp": 1.0, "fac": "heg", "radar": true, "name": "Broadside", "dmg": 20.0, "life": 18.0}, true)
-		"torp":
-			e.merge({"r": 1.8, "hp": 1.0, "fac": "free", "radar": true, "name": "Torpedo", "life": 9.0, "armed": false}, true)
+	var info: Dictionary = KIND_INFO.get(kind, {})
+	var e: Dictionary = {
+		"id": next_id, "kind": kind, "pos": p, "vel": Vector2.ZERO, "heading": -PI / 2.0, "r": float(info.get("r", 20.0)),
+		"hp": float(info.get("hp", 10.0)), "hp_max": float(info.get("hp", 10.0)), "name": str(info.get("name", kind)),
+		"hostile": bool(info.get("hostile", false)), "shootable": bool(info.get("shootable", false)),
+		"tractor": bool(info.get("tractor", false)), "scanned": false, "alive": true, "ai": "none", "cd": rng.randf_range(2.0, 4.0),
+		"latched": false, "rel": 0.0, "stun": 0.0, "charge": 0.0, "tag": "", "weak_known": false, "note": "",
+	}
 	e.merge(opts, true)
+	next_id += 1
 	ents.append(e)
 	return e
 
-func find(id: int) -> Dictionary:
+func ent(id: int) -> Dictionary:
 	for e in ents:
-		if e.id == id and not e.dead:
+		if int(e.id) == id:
 			return e
 	return {}
 
-func of_kind(kind: String) -> Array:
+func alive(kind: String = "", tag: String = "") -> Array:
 	var out: Array = []
 	for e in ents:
-		if e.kind == kind and not e.dead:
+		if e.alive and (kind == "" or e.kind == kind) and (tag == "" or e.tag == tag):
 			out.append(e)
 	return out
 
-func hostiles() -> Array:
-	var out: Array = []
-	for e in ents:
-		if e.dead:
-			continue
-		if e.kind in ["grabber", "snatch", "patrol", "bastion", "magnificence"]:
-			out.append(e)
-	return out
+func kill(e: Dictionary, why: String = "destroyed") -> void:
+	if not e.alive:
+		return
+	e.alive = false
+	add_fx("puff", e.pos, {"size": e.r})
+	emit("ent_" + why, {"id": e.id, "kind": e.kind, "name": e.name, "tag": e.tag})
 
-func clear_entities() -> void:
-	ents.clear()
-	scan = {"target": -1, "progress": 0.0, "on": false}
-	lock_id = -1
-	tractor_id = -1
-	hails.clear()
-	captain_comms.clear()
+func shoot_at_ship(from: Vector2, speed: float = 130.0, dmg: float = 10.0, kind: String = "blob", spread: float = 0.0) -> void:
+	var dir: Vector2 = (ship.pos - from).normalized().rotated(spread)
+	shots.append({"pos": from, "vel": dir * speed, "from": "them", "dmg": dmg, "life": 9.0, "kind": kind})
 
-func weak_pos(b: Dictionary) -> Vector2:
-	return b.pos + Vector2(-float(b.r) * 0.85, 0.0).rotated(b.ang)
-
-func sensor_range() -> float:
-	var r: float = 300.0 + 450.0 * minf(ship.pf("sensors"), 1.5) * ship.eff("SENS")
-	if ping_t > 0.0:
-		r = maxf(r, 1500.0)
-	return r * sensor_bonus
-
-func is_scanned(e: Dictionary) -> bool:
-	return t - float(e.scan) < 40.0
-
-func hail(from: String, text: String, ttl: float = 40.0) -> void:
-	from = from.replace("Admiral Thrupp", thrupp_title + " Thrupp")
-	text = text.replace("Admiral Thrupp", thrupp_title + " Thrupp")
-	var tf: float = rng.randf_range(0.15, 0.85)
-	if absf(tf - float(comms["freq"])) < 0.2:
-		tf = fposmod(tf + 0.35, 1.0)
-	hails.append({"from": from, "text": text, "freq": tf, "ttl": ttl, "t": 0.0})
-	comms["target"] = tf
-
-# ---------------------------------------------------------------- stepping
+# ---------------------------------------------------------------- the step
 
 func step(dt: float) -> void:
 	t += dt
-	for k in inverted.keys():
-		inverted[k] = float(inverted[k]) - dt
-		if inverted[k] <= 0.0:
-			inverted.erase(k)
-	ship.step(dt)
-	for ev in ship.events:
-		_ship_event(ev[0], ev[1])
-	ship.events.clear()
-	_ents_step(dt)
-	_collide(dt)
-	_sensors_step(dt)
-	_work_step(dt)
-	_tractor_step(dt)
-	_weapons_step(dt)
-	if enc != null:
-		enc.tick(dt)
-	director.tick(dt)
-	stats["spins"] = float(stats["spins"]) + absf(ship.angvel) * dt
-	for s in K.STATIONS:
-		var li: Dictionary = last_input.get(s, {"t": 0.0})
-		var idle: float = t - float(li.get("t", 0.0))
-		stats["idle_max"][s] = maxf(float(stats["idle_max"][s]), idle)
-	_cleanup()
+	_ship_physics(dt)
+	_heat(dt)
+	_weapons(dt)
+	_shots(dt)
+	_ai(dt)
+	_tractor(dt)
+	_scan(dt)
+	_comms(dt)
+	_pudding(dt)
+	_fires(dt)
+	_repairs(dt)
+	_power(dt)
+	_bumps(dt)
+	ents = ents.filter(func(e): return e.alive or false)
+	fx = fx.filter(func(f): return t - float(f.t) < 1.5)
+	if mission != null:
+		mission.tick(self, dt)
 
-func _cleanup() -> void:
-	var keep: Array = []
+func _ship_physics(dt: float) -> void:
+	var s: Ship = ship
+	s.roll_t = maxf(0.0, s.roll_t - dt)
+	s.roll_cd = maxf(0.0, s.roll_cd - dt)
+	if s.blackout_t > 0.0:
+		s.blackout_t = maxf(0.0, s.blackout_t - dt)
+		if s.blackout_t <= 0.0:
+			emit("power_back")
+	var steer: float = s.wheel * Ship.TURN_RATE * (1.0 if s.ok("bridge") else 0.35)
+	# one engine down: the other one shoves us round (Cosmoteer-style)
+	var pull: float = 0.0
+	if s.throttle > 0.05 and s.blackout_t <= 0.0:
+		if not s.ok("engine_p") and s.ok("engine_s"):
+			pull = -0.5 * s.throttle
+		elif not s.ok("engine_s") and s.ok("engine_p"):
+			pull = 0.5 * s.throttle
+	var latched: int = 0
 	for e in ents:
-		if not e.dead:
-			keep.append(e)
-	ents = keep
-
-func _ship_event(type: String, data: Dictionary) -> void:
-	if type == "hull_hit":
-		pass
-	emit(type, data)
-
-func _ents_step(dt: float) -> void:
-	var sp: Vector2 = ship.pos
-	for e in ents:
-		if e.dead:
-			continue
-		e.t += dt
-		match e.kind:
-			"grabber", "snatch":
-				_drone_ai(e, dt)
-			"bullet", "ebullet", "eshell", "torp":
-				_proj_ai(e, dt)
-			"bastion":
-				_bastion_ai(e, dt)
-			"magnificence":
-				_magnificence_ai(e, dt)
-			"diner":
-				e.ang += 0.12 * dt
-				e.pos += e.vel * dt
-			"patrol":
-				_patrol_ai(e, dt)
-			"mine":
-				e.pos += e.vel * dt
-				var d: float = e.pos.distance_to(sp)
-				if d < ship.radius + e.r + 2.0:
-					_explode_mine(e)
-			_:
-				e.pos += e.vel * dt
-				e.ang += e.angvel * dt
-
-func _explode_mine(e: Dictionary) -> void:
-	e.dead = true
-	var dir: Vector2 = (e.pos - ship.pos).normalized()
-	ship.hit(dir, 30.0, "mine")
-	damages_billed += 30.0
-	emit("boom", {"pos": e.pos, "size": 12.0})
-	emit("mine_hit", {})
-	ship.vel -= dir * 6.0
-
-func _drone_ai(e: Dictionary, dt: float) -> void:
-	var is_snatch: bool = e.kind == "snatch"
-	if e.state == "stunned":
-		e.st -= dt
-		e.pos += e.vel * dt
-		e.vel *= 1.0 - 0.8 * dt
-		if e.st <= 0.0:
-			e.state = "chase"
-		return
-	if e.state == "chase":
-		var to: Vector2 = ship.pos - e.pos
-		var d: float = to.length()
-		var maxs: float = (26.0 if not is_snatch else 30.0) + float(temper) * 1.5
-		var want: Vector2 = to.normalized() * maxs
-		# lead the target a little
-		if d > 60.0:
-			want = (to + ship.vel * (d / maxs) * 0.6).normalized() * maxs
-		e.vel = e.vel.move_toward(want, 38.0 * dt)
-		e.pos += e.vel * dt
-		e.ang = e.vel.angle()
-		if d < ship.radius + e.r + 1.5:
-			e.state = "latched"
-			e.st = 0.0
-			e["off"] = (e.pos - ship.pos).rotated(-ship.heading)
-			e["shake_t"] = 0.0
-			# latch point on nearest module
-			var best: String = ""
-			var bd: float = 1e9
-			for id in ship.mod_order:
-				var m: Dictionary = ship.modules[id]
-				var dd: float = e.off.distance_to(Vector2(m.lx, m.ly))
-				if is_snatch and id == "PEN":
-					dd = -1.0
-				if dd < bd:
-					bd = dd
-					best = id
-			e["mod"] = best
-			emit("latched", {"kind": e.kind, "id": e.id, "mod": best})
-		return
-	if e.state == "latched":
-		e.pos = ship.pos + Vector2(e.off).rotated(ship.heading)
-		e.vel = ship.vel
-		e.st += dt
-		if is_snatch:
-			if e.st > 14.0 and ship.pud["aboard"]:
-				emit("pudding_snatched", {})
-				e.dead = true
-				return
-			ship.pud["mood"] = minf(100.0, float(ship.pud["mood"]) + 3.0 * dt)
-		else:
-			ship.damage_module(e.mod, 5.0 * dt)
-			ship.pud["mood"] = minf(100.0, float(ship.pud["mood"]) + 1.0 * dt)
-		if absf(ship.angvel) > 2.0:
-			e.shake_t += dt
-		else:
-			e.shake_t = maxf(0.0, float(e.shake_t) - dt)
-		if float(e.shake_t) > 1.2 or ship.hit_flash > 0.25 and rng.randf() < 0.02:
-			e.state = "stunned"
-			e.st = 3.0
-			e.vel = (e.pos - ship.pos).normalized() * 40.0
-			emit("shaken_off", {"kind": e.kind})
-
-func _patrol_ai(e: Dictionary, dt: float) -> void:
-	e.pos += e.vel * dt
-	e.ang = lerp_angle(float(e.ang), e.vel.angle(), 1.0 * dt) if e.vel.length() > 0.1 else float(e.ang)
-	if e.state == "hostile":
-		var to: Vector2 = ship.pos - e.pos
-		e.vel = e.vel.move_toward(to.normalized() * 14.0, 6.0 * dt)
-		e.fire_t = float(e.get("fire_t", 3.0)) - dt
-		if e.fire_t <= 0.0 and to.length() < 500.0:
-			e.fire_t = 2.2
-			_enemy_shot(e.pos, ship.pos, "ebullet", 90.0)
-
-func _enemy_shot(from: Vector2, to: Vector2, kind: String, speed: float) -> void:
-	var dir: Vector2 = (to - from).normalized()
-	# lead the ship a bit
-	var d: float = from.distance_to(to)
-	var lead: Vector2 = to + ship.vel * (d / speed) * 0.5
-	dir = (lead - from).normalized()
-	spawn(kind, from + dir * 6.0, {"vel": dir * speed, "ang": dir.angle()})
-
-func _bastion_ai(e: Dictionary, dt: float) -> void:
-	e.pos += e.vel * dt
-	var to: Vector2 = ship.pos - e.pos
-	if e.state != "dead" and e.state != "ignore":
-		var want: float = to.angle()
-		var diff: float = K.wrap_pi(want - float(e.ang))
-		e.ang += clampf(diff, -0.12 * dt, 0.12 * dt)
-		e.fire_t -= dt
-		var d: float = to.length()
-		if e.state == "idle" and e.fire_t <= 0.0 and d < 900.0:
-			e.state = "telegraph"
-			e.st = 3.0
-			emit("bastion_telegraph", {"id": e.id})
-		elif e.state == "telegraph":
-			e.st -= dt
-			if e.st <= 0.0:
-				e.state = "idle"
-				e.fire_t = maxf(5.0, 9.0 - float(temper) * 0.7)
-				for i in 3:
-					var off: Vector2 = Vector2.from_angle(float(e.ang) + PI / 2.0) * (float(i) - 1.0) * 16.0
-					_enemy_shot(e.pos + off, ship.pos, "eshell", 62.0)
-				emit("bastion_fire", {"id": e.id})
-		if e.get("tractor", false):
-			var pull: float = 3.5 + 7.0 * maxf(0.0, sin(t * 2.2))
-			ship.vel -= to.normalized() * pull * dt
-			emit_throttled("tractor_pull", 6.0)
-
-var _throttle: Dictionary = {}
-func emit_throttled(type: String, gap: float, data: Dictionary = {}) -> void:
-	if t - float(_throttle.get(type, -999.0)) >= gap:
-		_throttle[type] = t
-		emit(type, data)
-
-func _magnificence_ai(e: Dictionary, dt: float) -> void:
-	e.pos += e.vel * dt
-	e.fire_t -= dt
-	if e.fire_t <= 0.0 and e.pos.distance_to(ship.pos) < 1200.0:
-		e.fire_t = 5.0
-		emit("bastion_telegraph", {"id": e.id})
-		for i in 5:
-			var off: Vector2 = Vector2.from_angle(float(e.ang) + PI / 2.0) * (float(i) - 2.0) * 40.0
-			_enemy_shot(e.pos + off, ship.pos + Vector2(rng.randf_range(-40, 40), rng.randf_range(-40, 40)), "eshell", 70.0)
-
-func _proj_ai(e: Dictionary, dt: float) -> void:
-	e.life = float(e.get("life", 3.0)) - dt
-	if e.life <= 0.0:
-		e.dead = true
-		if e.kind == "torp":
-			_torp_blast(e)
-		return
-	if e.kind == "torp":
-		var tgt: Dictionary = find(int(e.get("target", -1)))
-		if not tgt.is_empty():
-			var aim: Vector2 = tgt.pos
-			if tgt.kind == "bastion" and e.get("weak", false):
-				aim = weak_pos(tgt)
-			var want: float = (aim - e.pos).angle()
-			var cur: float = e.vel.angle()
-			var diff: float = K.wrap_pi(want - cur)
-			cur += clampf(diff, -1.4 * dt, 1.4 * dt)
-			e.vel = Vector2.from_angle(cur) * 75.0
-		e.ang = e.vel.angle()
-		if not e.armed and e.t > 1.5:
-			e.armed = true
-	if e.kind == "bullet" or e.kind == "torp":
-		for step_i in 3:
-			e.pos += e.vel * (dt / 3.0)
-			for o in ents:
-				if o.dead or o.id == e.id or o.kind in ["bullet", "torp", "ebullet", "eshell", "waypoint", "debris", "beacon"]:
-					continue
-				var rad: float = float(o.r) + float(e.r)
-				if e.pos.distance_to(o.pos) < rad:
-					if e.kind == "torp":
-						if not e.armed:
-							continue
-						e.dead = true
-						_torp_blast(e)
-						return
-					_bullet_hit(e, o)
-					return
-			if e.kind == "torp" and e.armed and e.pos.distance_to(ship.pos) < ship.radius + 2.0 and e.t > 2.0:
-				e.dead = true
-				_torp_blast(e)
-				return
+		if e.alive and e.latched:
+			latched += 1
+	if s.roll_t > 0.0:
+		s.angvel = lerpf(s.angvel, 0.0, 1.0 - exp(-4.0 * dt))
 	else:
+		s.angvel = lerpf(s.angvel, steer + pull, 1.0 - exp(-3.2 * dt))
+	s.heading = K.wrap_pi(s.heading + s.angvel * dt)
+	var n: float = float(s.engines_working()) / 2.0
+	var boost_k: float = 1.65 if (s.boost and feat("boost") and n > 0.0) else 1.0
+	var max_v: float = Ship.MAX_SPEED * n * s.power_factor("engines", features) * boost_k * (1.0 - 0.15 * latched)
+	var target: Vector2 = s.fwd() * s.throttle * max_v
+	var rate: float = 0.9 if s.blackout_t <= 0.0 else 0.25
+	if s.blackout_t > 0.0:
+		target = Vector2.ZERO
+	s.vel = s.vel.lerp(target, 1.0 - exp(-rate * dt))
+	if s.roll_t > 0.0:
+		s.vel += s.fwd().orthogonal() * 60.0 * dt * signf(s.wheel if s.wheel != 0.0 else 1.0)
+	s.pos += s.vel * dt
+
+func _heat(dt: float) -> void:
+	var s: Ship = ship
+	if not feat("heat"):
+		s.engine_heat = 0.0
+		s.gun_heat = maxf(0.0, s.gun_heat - 30.0 * dt)
+		return
+	var hot: float = 0.0
+	if s.engines_working() > 0 and s.blackout_t <= 0.0:
+		if s.throttle > 0.72:
+			hot = (s.throttle - 0.72) * 85.0
+		if s.boost and feat("boost"):
+			hot += 22.0
+	s.engine_heat = clampf(s.engine_heat + (hot - (14.0 if hot <= 0.0 else 0.0)) * dt, 0.0, 100.0)
+	if s.engine_heat >= 100.0:
+		var opts: Array = []
+		for e in ["engine_p", "engine_s"]:
+			if s.ok(e):
+				opts.append(e)
+		if not opts.is_empty():
+			break_system(opts[rng.randi() % opts.size()], "overheated", true)
+		s.engine_heat = 55.0
+	s.gun_heat = maxf(0.0, s.gun_heat - 13.0 * dt)
+
+func _weapons(dt: float) -> void:
+	var s: Ship = ship
+	s.gun_cd = maxf(0.0, s.gun_cd - dt)
+	if s.firing and s.ok("gun") and s.gun_cd <= 0.0:
+		var dir: Vector2 = Vector2.from_angle(s.turret_world())
+		shots.append({"pos": s.pos + dir * 22.0, "vel": dir * BULLET_SPEED + s.vel * 0.5, "from": "us", "dmg": 10.0, "life": 1.4, "kind": "bullet"})
+		s.gun_cd = 0.3 / maxf(0.3, s.power_factor("weapons", features))
+		stats.shots += 1
+		if feat("heat"):
+			s.gun_heat += 9.0
+			if s.gun_heat >= 100.0:
+				s.gun_heat = 45.0
+				s.firing = false
+				break_system("gun", "jammed (overheated)", false)
+		if feat("pudding"):
+			s.pud_mood -= 0.35
+	if s.torp == "loading":
+		s.torp_load += dt / 2.2
+		if s.torp_load >= 1.0:
+			s.torp = "ready"
+			s.torp_load = 1.0
+			emit("torp_ready")
+
+func fire_torpedo() -> bool:
+	var s: Ship = ship
+	if s.torp != "ready" or not s.ok("gun"):
+		return false
+	var dir: Vector2 = Vector2.from_angle(s.turret_world())
+	shots.append({"pos": s.pos + dir * 24.0, "vel": dir * 200.0 + s.vel * 0.5, "from": "us", "dmg": 45.0, "life": 4.0, "kind": "torpedo"})
+	s.torp = "empty"
+	s.torp_load = 0.0
+	emit("torp_fired")
+	return true
+
+func _shots(dt: float) -> void:
+	var s: Ship = ship
+	for sh in shots:
+		sh.pos += sh.vel * dt
+		sh.life -= dt
+		if sh.life <= 0.0:
+			continue
+		if sh.from == "us":
+			for e in ents:
+				if not e.alive or not e.shootable:
+					continue
+				if sh.pos.distance_to(e.pos) <= e.r + (6.0 if sh.kind == "torpedo" else 3.0):
+					sh.life = 0.0
+					_hit_ent(e, sh)
+					break
+		else:
+			if sh.pos.distance_to(s.pos) <= SHIP_R + 6.0:
+				sh.life = 0.0
+				_hit_ship(sh)
+	shots = shots.filter(func(x): return x.life > 0.0)
+
+func _hit_ent(e: Dictionary, sh: Dictionary) -> void:
+	var dmg: float = float(sh.dmg)
+	if e.kind == "cruiser":
+		# only the vent at the back really hurts
+		var back: Vector2 = Vector2.from_angle(float(e.heading))
+		var rear: bool = (sh.pos - e.pos).dot(back) < -e.r * 0.35
+		if sh.kind == "torpedo":
+			dmg = 50.0 if rear else 6.0
+			emit("torp_hit", {"weak": rear})
+		else:
+			dmg = 2.0 if rear else 0.5
+	if e.kind == "patrol":
+		dmg = 0.0
+	stats.hits += 1
+	e.hp -= dmg
+	add_fx("spark", sh.pos)
+	if not e.hostile and e.kind in ["buoy"]:
+		stats.friendly_fire += 1
+		emit("friendly_fire", {"name": e.name, "id": e.id})
+	if e.hp <= 0.0:
+		kill(e, "destroyed")
+		if e.kind == "mine":
+			for o in ents:
+				if o.alive and o.id != e.id and o.pos.distance_to(e.pos) < 60.0 and o.shootable:
+					o.hp -= 15.0
+
+func _hit_ship(sh: Dictionary) -> void:
+	var s: Ship = ship
+	var from_dir: float = (sh.pos - s.pos).angle()
+	if s.roll_t > 0.0:
+		stats.dodges += 1
+		emit("dodged")
+		return
+	if s.shield_covers(from_dir):
+		stats.blocked += 1
+		add_fx("block", sh.pos)
+		emit("blocked", {"kind": sh.kind})
+		if feat("pudding"):
+			s.pud_mood -= 1.5
+		if feat("power"):
+			s.overload += 4.0
+		return
+	damage_ship(float(sh.dmg), from_dir, str(sh.kind))
+
+func damage_ship(dmg: float, from_dir: float, cause: String = "hit") -> void:
+	var s: Ship = ship
+	s.hull = maxf(0.0, s.hull - dmg)
+	stats.hits_taken += 1
+	add_fx("hit", s.pos + Vector2.from_angle(from_dir) * SHIP_R)
+	var rel: float = K.wrap_pi(from_dir - s.heading)
+	emit("hit", {"dmg": dmg, "rel": rel, "cause": cause})
+	if feat("pudding"):
+		s.pud_mood -= 7.0
+	var sysid: String = s.side_system(rel)
+	if feat("damage") and s.ok(sysid) and str(s.sys[sysid].state) == "ok":
+		s.sys[sysid].hp -= dmg * 3.2
+		if float(s.sys[sysid].hp) <= 0.0:
+			break_system(sysid, "was hit", feat("fire") and rng.randf() < 0.45)
+
+func break_system(id: String, why: String = "broke", fire: bool = false) -> void:
+	var st: Dictionary = ship.sys[id]
+	if str(st.state) == "fire":
+		return
+	var was_ok: bool = str(st.state) == "ok"
+	st.hp = 0.0
+	st.state = "fire" if fire else "broken"
+	st.fire_t = 0.0
+	if fire:
+		stats.fires += 1
+	if was_ok:
+		stats.breaks += 1
+	emit("broke", {"sys": id, "why": why, "fire": fire, "name": Ship.SYS_NAME[id]})
+	if id == "gun":
+		ship.firing = false
+
+# ---------------------------------------------------------------- enemies
+
+func _ai(dt: float) -> void:
+	var s: Ship = ship
+	for e in ents:
+		if not e.alive:
+			continue
+		e.stun = maxf(0.0, float(e.stun) - dt)
+		match str(e.ai):
+			"drift":
+				e.pos += e.vel * dt
+			"drone":
+				_ai_drone(e, dt)
+			"patrol":
+				_ai_patrol(e, dt)
+			"cruiser":
+				_ai_cruiser(e, dt)
+			"grabber":
+				_ai_grabber(e, dt)
+			"mine":
+				if e.pos.distance_to(s.pos) < e.r + SHIP_R + 10.0:
+					kill(e, "exploded")
+					add_fx("puff", e.pos, {"size": 40.0})
+					damage_ship(18.0, (e.pos - s.pos).angle(), "mine")
+			"thrown":
+				# practice junk: flies at the ship, counts as a shot when it arrives
+				e.pos += e.vel * dt
+				if e.pos.distance_to(s.pos) < SHIP_R + e.r:
+					e.alive = false
+					var from_dir: float = (e.pos - s.pos).angle()
+					if s.shield_covers(from_dir):
+						stats.blocked += 1
+						add_fx("block", e.pos)
+						emit("blocked", {"kind": "junk", "tag": e.tag})
+					elif s.roll_t > 0.0:
+						emit("dodged")
+					else:
+						damage_ship(6.0, from_dir, "junk")
+					emit("junk_done", {"id": e.id})
+				elif e.pos.distance_to(s.pos) > 900.0:
+					e.alive = false
+					emit("junk_done", {"id": e.id})
+		if e.kind in ["drone", "grabber", "patrol"]:
+			e.heading = lerp_angle(float(e.heading), (s.pos - e.pos).angle(), 1.0 - exp(-2.0 * dt))
+		elif e.kind == "cruiser":
+			# big and slow to turn: that's how you get behind it
+			var dh: float = K.wrap_pi((s.pos - e.pos).angle() - float(e.heading))
+			e.heading = K.wrap_pi(float(e.heading) + clampf(dh, -0.06 * dt, 0.06 * dt))
+
+func _ai_drone(e: Dictionary, dt: float) -> void:
+	var s: Ship = ship
+	var to: Vector2 = s.pos - e.pos
+	var d: float = to.length()
+	var want: Vector2 = to.normalized() * (d - 230.0) * 0.6 + to.normalized().orthogonal() * 40.0
+	e.vel = e.vel.lerp(want.limit_length(80.0), 1.0 - exp(-1.2 * dt))
+	e.pos += e.vel * dt
+	e.cd = float(e.cd) - dt
+	if e.cd <= 0.0 and d < 480.0 and e.stun <= 0.0:
+		e.cd = rng.randf_range(3.6, 5.2)
+		shoot_at_ship(e.pos, 140.0, 8.0)
+
+func _ai_patrol(e: Dictionary, dt: float) -> void:
+	var s: Ship = ship
+	var to: Vector2 = s.pos - e.pos
+	var d: float = to.length()
+	var spd: float = float(e.get("speed", 58.0))
+	e.vel = e.vel.lerp(to.normalized() * (spd if d > 160.0 else 20.0), 1.0 - exp(-0.8 * dt))
+	e.pos += e.vel * dt
+	e.cd = float(e.cd) - dt
+	if e.cd <= 1.2 and e.charge <= 0.0 and d < 520.0:
+		e.charge = 1.2
+		emit("charging", {"id": e.id})
+	if e.charge > 0.0:
+		e.charge = float(e.charge) - dt
+		if e.charge <= 0.0:
+			e.cd = rng.randf_range(5.0, 6.5)
+			for k in [-0.18, 0.0, 0.18]:
+				shoot_at_ship(e.pos, 170.0, 9.0, "blob", k)
+
+func _ai_cruiser(e: Dictionary, dt: float) -> void:
+	var s: Ship = ship
+	var to: Vector2 = s.pos - e.pos
+	var d: float = to.length()
+	# lumbers forward along its heading, slowly turning towards us
+	e.vel = e.vel.lerp(Vector2.from_angle(float(e.heading)) * (16.0 if d > 200.0 else 4.0), 1.0 - exp(-0.4 * dt))
+	e.pos += e.vel * dt
+	e.cd = float(e.cd) - dt
+	if e.cd <= 2.0 and e.charge <= 0.0:
+		e.charge = 2.0
+		emit("charging", {"id": e.id, "big": true})
+	if e.charge > 0.0:
+		e.charge = float(e.charge) - dt
+		if e.charge <= 0.0:
+			e.cd = rng.randf_range(6.0, 7.5)
+			for k in [-0.3, -0.15, 0.0, 0.15, 0.3]:
+				shoot_at_ship(e.pos + Vector2.from_angle(float(e.heading)) * 40.0, 150.0, 8.0, "blob", k)
+
+func _ai_grabber(e: Dictionary, dt: float) -> void:
+	var s: Ship = ship
+	if e.latched:
+		e.pos = s.pos + Vector2.from_angle(s.heading + float(e.rel)) * (SHIP_R + 10.0)
+		e.cd = float(e.cd) - dt
+		if e.cd <= 0.0:
+			e.cd = 1.0
+			s.hull = maxf(0.0, s.hull - 1.2)
+			var sysid: String = s.side_system(float(e.rel))
+			if feat("damage") and s.ok(sysid):
+				s.sys[sysid].hp -= 7.0
+				if float(s.sys[sysid].hp) <= 0.0:
+					break_system(sysid, "was chewed by a grabber", false)
+			if feat("pudding"):
+				s.pud_mood -= 2.0
+		# shield bash: point the shield at it for a moment
+		if s.ok("shield") and absf(K.wrap_pi(float(e.rel) - s.shield_dir)) < Ship.SHIELD_HALF_ARC:
+			e.charge = float(e.charge) + dt
+		else:
+			e.charge = maxf(0.0, float(e.charge) - dt)
+		# shoot it off: aim the turret at it
+		if s.firing and s.ok("gun") and absf(K.wrap_pi(float(e.rel) - s.aim)) < 0.4:
+			e.hp -= 9.0 * dt
+			if e.hp <= 0.0:
+				kill(e, "destroyed")
+				return
+		if shake_t > 1.4 or float(e.charge) > 1.8:
+			e.latched = false
+			e.stun = 4.0
+			e.hp -= 12.0
+			e.charge = 0.0
+			e.vel = Vector2.from_angle(s.heading + float(e.rel)) * 160.0
+			emit("unlatched", {"id": e.id, "how": "shaken" if shake_t > 1.4 else "shield"})
+			if e.hp <= 0.0:
+				kill(e, "destroyed")
+		return
+	var to: Vector2 = s.pos - e.pos
+	if e.stun > 0.0:
 		e.pos += e.vel * dt
-		if e.pos.distance_to(ship.pos) < ship.radius + float(e.r):
-			e.dead = true
-			ship.hit((e.pos - ship.pos).normalized(), float(e.dmg), "shot")
-			damages_billed += float(e.dmg) * 0.5
-			emit("boom", {"pos": e.pos, "size": 6.0})
-		elif e.t > 0.2:
-			# near miss detector
-			var d: float = e.pos.distance_to(ship.pos)
-			if d < ship.radius + 6.0 and not e.get("nm", false):
-				e.nm = true
-				stats["near_miss"] = int(stats["near_miss"]) + 1
-				emit("near_miss", {})
-
-func _bullet_hit(b: Dictionary, o: Dictionary) -> void:
-	b.dead = true
-	emit("boom", {"pos": b.pos, "size": 3.0})
-	if o.kind == "asteroid":
+		e.vel *= exp(-1.0 * dt)
 		return
-	if o.kind == "bastion":
-		var wp: Vector2 = weak_pos(o)
-		o.hp -= 1.0
-		if b.pos.distance_to(wp) < 9.0:
-			o.weak_hp = float(o.weak_hp) - 8.0
-			if float(o.weak_hp) <= 0.0:
-				o.hp = 0.0
-				o.state = "dead"
-				_kill(o)
-		return
-	if o.fac == "free" or o.kind in ["skip", "pod"] or (o.fac == "neu" and o.kind != "mine"):
-		stats["friendly_fire"] = int(stats["friendly_fire"]) + 1
-		emit("friendly_fire", {"name": o.name, "id": o.id, "kind": o.kind})
-	o.hp -= float(b.get("dmg", 15.0))
-	if o.hp <= 0.0 and o.kind != "mine":
-		_kill(o)
-	elif o.kind == "mine":
-		o.dead = true
-		emit("boom", {"pos": o.pos, "size": 10.0})
+	e.vel = e.vel.lerp(to.normalized() * 95.0, 1.0 - exp(-1.0 * dt))
+	e.pos += e.vel * dt
+	if to.length() < SHIP_R + e.r + 4.0:
+		e.latched = true
+		e.rel = K.wrap_pi((e.pos - s.pos).angle() - s.heading)
+		e.cd = 1.0
+		emit("latched", {"id": e.id, "rel": e.rel})
 
-func _kill(o: Dictionary) -> void:
-	o.dead = true
-	stats["kills"] = int(stats["kills"]) + 1
-	emit("boom", {"pos": o.pos, "size": clampf(float(o.r) * 1.4, 4.0, 40.0)})
-	emit("kill", {"kind": o.kind, "id": o.id, "name": o.name})
-	if o.kind == "grabber" and o.state == "latched":
+func _bumps(dt: float) -> void:
+	var s: Ship = ship
+	bump_cd = maxf(0.0, bump_cd - dt)
+	if absf(s.angvel) > 1.1:
+		shake_t += dt
+	else:
+		shake_t = maxf(0.0, shake_t - dt * 0.5)
+	for e in ents:
+		if not e.alive or not (e.kind in ["rock", "customs", "haven", "diner", "cruiser", "skip"]):
+			continue
+		var to: Vector2 = s.pos - e.pos
+		var d: float = to.length()
+		var min_d: float = e.r + SHIP_R * 0.8
+		if d < min_d and d > 0.01:
+			s.pos = e.pos + to / d * min_d
+			var vn: float = s.vel.dot(to / d)
+			if vn < 0.0:
+				s.vel -= to / d * vn * 1.4
+			if bump_cd <= 0.0 and s.speed() > 12.0:
+				bump_cd = 1.0
+				damage_ship(4.0 + s.speed() * 0.08, (e.pos - s.pos).angle(), "bump")
+				emit("bump", {"name": e.name})
+
+# ---------------------------------------------------------------- stations
+
+func _tractor(dt: float) -> void:
+	var s: Ship = ship
+	s.tractor_target = -1
+	if not feat("tractor") or not s.tractor_on or not s.ok("tractor"):
+		return
+	var best: Dictionary = {}
+	var bd: float = TRACTOR_RANGE
+	for e in ents:
+		if e.alive and e.tractor:
+			var d: float = e.pos.distance_to(s.pos)
+			if d < bd:
+				bd = d
+				best = e
+	if best.is_empty():
+		return
+	s.tractor_target = int(best.id)
+	var to: Vector2 = s.pos - best.pos
+	best.vel = best.vel.lerp(to.normalized() * 70.0 + s.vel, 1.0 - exp(-2.0 * dt))
+	best.pos += best.vel * dt
+	if to.length() < SHIP_R + best.r + 6.0:
+		best.alive = false
+		emit("collected", {"id": best.id, "kind": best.kind, "name": best.name, "tag": best.tag})
+	if feat("power"):
 		pass
 
-func _torp_blast(e: Dictionary) -> void:
-	emit("boom", {"pos": e.pos, "size": 22.0})
-	var blast: float = 16.0
-	for o in ents:
-		if o.dead or o.kind in ["bullet", "torp", "ebullet", "eshell", "waypoint"]:
-			continue
-		var d: float = o.pos.distance_to(e.pos)
-		if d > blast + float(o.r):
-			continue
-		if o.kind == "asteroid":
-			continue
-		if o.kind == "bastion":
-			var wp: Vector2 = weak_pos(o)
-			if e.pos.distance_to(wp) < 12.0:
-				o.weak_hp = float(o.weak_hp) - 60.0 * torp_bonus
-				o.hp -= 120.0 * torp_bonus
-				emit("weak_hit", {"id": o.id})
-			else:
-				o.hp -= 6.0
-			if o.hp <= 0.0 or float(o.weak_hp) <= 0.0:
-				o.hp = 0.0
-				o.state = "dead"
-				_kill(o)
-			continue
-		if o.fac == "free" or o.kind in ["skip", "pod", "diner", "freighter"] or o.kind == "debris":
-			if o.kind != "debris":
-				stats["friendly_fire"] = int(stats["friendly_fire"]) + 1
-				emit("friendly_fire", {"name": o.name, "id": o.id, "kind": o.kind})
-		o.hp -= 45.0 * torp_bonus
-		if o.hp <= 0.0:
-			if o.kind == "mine":
-				o.dead = true
-			else:
-				_kill(o)
-	if e.pos.distance_to(ship.pos) < blast + ship.radius:
-		ship.hit((e.pos - ship.pos).normalized(), 35.0, "own_torp")
-		damages_billed += 35.0
-		emit("friendly_fire", {"name": "your own ship", "id": 0, "kind": "ship"})
-
-func _collide(dt: float) -> void:
-	for e in ents:
-		if e.dead or not e.solid:
-			continue
-		var d_vec: Vector2 = ship.pos - e.pos
-		var d: float = d_vec.length()
-		var rad: float = ship.radius + float(e.r)
-		if d < rad and d > 0.001:
-			var n: Vector2 = d_vec / d
-			var rel: Vector2 = ship.vel - e.vel
-			var vn: float = rel.dot(n)
-			# separate
-			ship.pos += n * (rad - d)
-			if vn < 0.0:
-				var m_e: float = float(e.get("mass", 1000.0))
-				var j: float = -(1.0 + 0.45) * vn / (1.0 / ship.mass + 1.0 / m_e)
-				ship.vel += n * (j / ship.mass)
-				e.vel -= n * (j / m_e)
-				var impact: float = -vn
-				ship.angvel += (rng.randf() - 0.5) * impact * 0.08
-				if impact > 3.0:
-					var dmg: float = (impact - 3.0) * 1.6
-					ship.hit(-n, dmg, "collision")
-					damages_billed += dmg
-					stats["collisions"] = int(stats["collisions"]) + 1
-					stats["max_collision"] = maxf(float(stats["max_collision"]), impact)
-					emit("collision", {"speed": impact, "name": e.name, "kind": e.kind})
-					emit("boom", {"pos": ship.pos - n * ship.radius, "size": clampf(impact * 0.5, 3.0, 14.0)})
-
-func _sensors_step(dt: float) -> void:
-	ping_t = maxf(0.0, ping_t - dt)
-	ping_cd = maxf(0.0, ping_cd - dt)
-	reveal_t = maxf(0.0, reveal_t - dt)
-	iscan_cd = maxf(0.0, iscan_cd - dt)
-	# comms drift chore
-	comms["vel"] = float(comms["vel"]) * (1.0 - 0.4 * dt) + (rng.randf() - 0.5) * 0.04 * dt
-	comms["freq"] = clampf(float(comms["freq"]) + float(comms["vel"]) * dt, 0.0, 1.0)
-	if comms["freq"] <= 0.0 or comms["freq"] >= 1.0:
-		comms["vel"] = -float(comms["vel"])
-	# scanning
-	if scan["on"]:
-		var e: Dictionary = find(int(scan["target"]))
-		if e.is_empty() or e.pos.distance_to(ship.pos) > sensor_range() * 0.95:
-			scan["progress"] = maxf(0.0, float(scan["progress"]) - dt * 0.5)
+func _scan(dt: float) -> void:
+	if not scanning or scan_target < 0:
+		scan_prog = maxf(0.0, scan_prog - dt)
+		return
+	var e: Dictionary = ent(scan_target)
+	if e.is_empty() or not e.alive:
+		scan_prog = 0.0
+		return
+	if not ship.ok("sensors") or e.pos.distance_to(ship.pos) > RADAR_RANGE:
+		return
+	scan_prog += dt / SCAN_TIME
+	if scan_prog >= 1.0:
+		scan_prog = 0.0
+		if not e.scanned:
+			e.scanned = true
+			stats.scans += 1
+			emit("scanned", {"id": e.id, "name": e.name, "kind": e.kind, "hostile": e.hostile})
+		elif e.kind == "cruiser" and feat("weakspot") and not e.weak_known:
+			e.weak_known = true
+			emit("weak_found", {"id": e.id})
 		else:
-			var rate: float = maxf(0.3, ship.pf("sensors") * ship.eff("SENS"))
-			scan["progress"] = float(scan["progress"]) + dt * rate / 2.5
-			if scan["progress"] >= 1.0:
-				e.scan = t
-				scan["progress"] = 0.0
-				scan["on"] = false
-				emit("scanned", {"id": e.id, "kind": e.kind, "name": e.name})
-	# hails
-	if not hails.is_empty():
-		var h: Dictionary = hails[0]
-		h.t += dt
-		var q: float = absf(float(comms["freq"]) - float(h["freq"]))
-		comms["target"] = h["freq"]
-		var sens_ok: bool = ship.eff("SENS") > 0.0 and ship.pf("sensors") > 0.0
-		if q < 0.04 and sens_ok:
-			comms["tuned_t"] = float(comms["tuned_t"]) + dt
-			if comms["tuned_t"] >= 1.2:
-				captain_comms.append({"from": h.from, "text": h.text, "t": t})
-				emit("hail", {"from": h.from, "text": h.text})
-				hails.pop_front()
-				comms["tuned_t"] = 0.0
+			emit("rescanned", {"id": e.id, "kind": e.kind})
+
+func _comms(dt: float) -> void:
+	if hail.is_empty() or not feat("comms"):
+		return
+	hail.freq = clampf(float(hail.base) + sin(t * 0.25 + float(hail.base) * 9.0) * 0.08, 0.05, 0.95)
+	var sig: float = clampf(1.0 - absf(comms_freq - float(hail.freq)) * 7.0, 0.0, 1.0)
+	if not ship.ok("sensors"):
+		sig *= 0.3
+	hail.signal = sig
+	if sig > 0.8:
+		hail.lock_t = float(hail.lock_t) + dt
+	else:
+		hail.lock_t = maxf(0.0, float(hail.lock_t) - dt * 0.5)
+	if not hail.heard and float(hail.lock_t) > 1.0:
+		hail.heard = true
+		emit("hail_heard", {"from": hail.from, "text": hail.text})
+
+func send_hail(from: String, text: String) -> void:
+	hail = {"from": from, "text": text, "base": rng.randf_range(0.15, 0.85), "freq": 0.5, "heard": false, "lock_t": 0.0, "signal": 0.0,
+		"t": t}
+	emit("hail", {"from": from})
+
+func _pudding(dt: float) -> void:
+	var s: Ship = ship
+	if not feat("pudding"):
+		return
+	if s.boost and feat("boost"):
+		s.pud_mood -= 2.5 * dt
+	for id in Ship.SYSTEMS:
+		if s.on_fire(id):
+			s.pud_mood -= 1.0 * dt
+	if not s.pud_out:
+		s.pud_mood += (14.0 if s.petting else 0.5) * dt
+		s.pud_mood = clampf(s.pud_mood, 0.0, 100.0)
+		if s.pud_mood <= 0.0:
+			s.pud_out = true
+			s.pud_room = "pen"
+			s.pud_hop_t = 2.0
+			s.pud_chew_t = 7.0
+			s.tin_prog = 0.0
+			stats.escapes += 1
+			emit("pudding_out")
+		return
+	s.pud_mood = 0.0
+	s.pud_hop_t -= dt
+	if s.pud_hop_t <= 0.0:
+		s.pud_hop_t = rng.randf_range(4.0, 6.0)
+		var nb: Array = Ship.NEIGHBOURS[s.pud_room]
+		s.pud_room = nb[rng.randi() % nb.size()]
+		emit("pudding_moved", {"room": s.pud_room})
+	s.pud_chew_t -= dt
+	if s.pud_chew_t <= 0.0:
+		s.pud_chew_t = rng.randf_range(8.0, 11.0)
+		if s.ok(s.pud_room):
+			break_system(s.pud_room, "was chewed by Pudding", false)
+	if s.tin:
+		s.tin_prog += dt / 2.5
+		if s.tin_prog >= 1.0:
+			s.pud_out = false
+			s.pud_mood = 55.0
+			s.tin_prog = 0.0
+			emit("pudding_back")
+	else:
+		s.tin_prog = maxf(0.0, s.tin_prog - dt)
+
+func _fires(dt: float) -> void:
+	var s: Ship = ship
+	for id in Ship.SYSTEMS:
+		var st: Dictionary = s.sys[id]
+		if str(st.state) != "fire":
+			continue
+		st.fire_t = float(st.fire_t) + dt
+		s.hull = maxf(0.0, s.hull - 0.35 * dt)
+		if float(st.fire_t) > 11.0:
+			st.fire_t = 0.0
+			var nb: Array = Ship.NEIGHBOURS[id]
+			var to: String = nb[rng.randi() % nb.size()]
+			if str(s.sys[to].state) != "fire":
+				break_system(to, "caught fire", true)
+
+func _repairs(dt: float) -> void:
+	var s: Ship = ship
+	if not s.repairing or s.repair_target == "" or not s.sys.has(s.repair_target):
+		s.repair_prog = maxf(0.0, s.repair_prog - dt * 0.5)
+		return
+	var st: Dictionary = s.sys[s.repair_target]
+	var needs: bool = str(st.state) != "ok" or float(st.hp) < 100.0
+	if not needs:
+		s.repair_prog = 0.0
+		return
+	var fire: bool = str(st.state) == "fire"
+	s.repair_prog += dt / (Ship.FIRE_TIME if fire else (Ship.REPAIR_TIME if str(st.state) == "broken" else 1.5))
+	if s.repair_prog >= 1.0:
+		s.repair_prog = 0.0
+		if fire:
+			st.state = "broken"
+			emit("fire_out", {"sys": s.repair_target, "name": Ship.SYS_NAME[s.repair_target]})
 		else:
-			comms["tuned_t"] = 0.0
-		if not hails.is_empty() and hails[0] == h and h.t > float(h["ttl"]):
-			hails.pop_front()
-			emit("hail_lost", {"from": h.from})
-	var keep: Array = []
-	for c in captain_comms:
-		if t - float(c.t) < 12.0:
-			keep.append(c)
-	captain_comms = keep
+			st.state = "ok"
+			st.hp = 100.0
+			stats.repairs += 1
+			emit("repaired", {"sys": s.repair_target, "name": Ship.SYS_NAME[s.repair_target]})
 
-func _tractor_step(dt: float) -> void:
-	if tractor_id < 0:
+func _power(dt: float) -> void:
+	var s: Ship = ship
+	if not feat("power"):
+		s.draw = 0.0
+		s.overload = 0.0
 		return
-	var e: Dictionary = find(tractor_id)
-	if e.is_empty():
-		tractor_id = -1
+	var boost_k: float = 1.5 if (s.boost and feat("boost")) else 1.0
+	s.draw = float(s.power.engines) * s.throttle * boost_k + float(s.power.weapons) * (1.0 if s.firing else 0.15) \
+		+ float(s.power.shields) * 0.6 + (1.2 if s.tractor_on else 0.0) + (0.4 if scanning else 0.0)
+	if s.blackout_t > 0.0:
+		s.draw = 0.0
+		s.overload = 0.0
 		return
-	var p: float = ship.pf("ops") * ship.eff("OPSB")
-	if p <= 0.0:
-		return
-	var d: float = e.pos.distance_to(ship.pos)
-	var rng_t: float = 70.0 + 30.0 * p
-	if d > rng_t:
-		return
-	if e.get("solid", false) and e.kind != "skip":
-		return
-	var rel: Vector2 = e.vel - ship.vel
-	e.vel -= rel * minf(1.0, 1.4 * p * dt)
-	var to: Vector2 = (ship.pos - e.pos).normalized()
-	e.vel += to * (3.0 + 4.0 * p) * dt
-	if d < ship.radius + float(e.r) + 6.0 and rel.length() < 9.0:
-		e.dead = true
-		tractor_id = -1
-		emit("collected", {"id": e.id, "kind": e.kind, "name": e.name, "data": e.get("data", {})})
+	if s.draw > Ship.POWER_CAP + 0.01:
+		s.overload += (s.draw - Ship.POWER_CAP) * 16.0 * dt
+	else:
+		s.overload -= 12.0 * dt
+	s.overload = clampf(s.overload, 0.0, 100.0)
+	if s.overload >= 100.0:
+		s.overload = 0.0
+		s.blackout_t = 5.0
+		s.firing = false
+		stats.overloads += 1
+		s.sys.reactor.hp = float(s.sys.reactor.hp) - 45.0
+		emit("blackout")
+		if float(s.sys.reactor.hp) <= 0.0:
+			break_system("reactor", "blew its breaker", false)
 
-# ---------------------------------------------------------------- repair work
+# ---------------------------------------------------------------- forecasts (the captain's cues)
 
-func target_task(target: String) -> Dictionary:
-	## Describes the next repair task for a target ("mod:ID" or "con:CID"): kind, rate (progress/sec), mash.
-	if target.begins_with("trc:"):
-		var tcid: String = target.substr(4)
-		var tc: Dictionary = ship.conduits.get(tcid, {})
-		if tc.is_empty() or not tc.cut or not tc.hidden:
-			return {}
-		return {"kind": "trace", "rate": 0.5, "mash": false, "label": "Trace the break"}
-	if target.begins_with("con:"):
-		var cid: String = target.substr(4)
-		var c: Dictionary = ship.conduits.get(cid, {})
-		if c.is_empty() or not c.cut:
-			return {}
-		return {"kind": "splice", "rate": 0.25, "mash": false, "label": "Splice conduit"}
-	if target.begins_with("mod:"):
-		var id: String = target.substr(4)
-		if not ship.modules.has(id):
-			return {}
-		var m: Dictionary = ship.modules[id]
-		if m.fire > 0.0:
-			return {"kind": "fire", "rate": 0.33, "mash": false, "label": "Put out fire"}
-		if m.breach:
-			return {"kind": "breach", "rate": 0.33, "mash": false, "label": "Weld breach"}
-		if m.fault != "" and ship.mod_state(id) >= 2:
-			return {"kind": "unjam", "rate": 0.0, "mash": true, "label": "Kick it until it works"}
-		if m.hp < 99.0:
-			var hard: bool = ship.mod_state(id) >= 3
-			return {"kind": "repair", "rate": 0.29 if hard else 0.5, "mash": false, "label": "Repair module", "hard": hard}
-	return {}
+func overload_eta() -> float:
+	var s: Ship = ship
+	if not feat("power") or s.draw <= Ship.POWER_CAP + 0.01:
+		return -1.0
+	return (100.0 - s.overload) / maxf(0.01, (s.draw - Ship.POWER_CAP) * 16.0)
 
-func start_hold(actor: String, target: String, quick_station: String = "") -> void:
-	holds[actor] = {"target": target, "quick": quick_station}
+func engine_heat_eta() -> float:
+	var s: Ship = ship
+	if not feat("heat"):
+		return -1.0
+	var hot: float = 0.0
+	if s.throttle > 0.72:
+		hot = (s.throttle - 0.72) * 85.0
+	if s.boost and feat("boost"):
+		hot += 22.0
+	if hot <= 0.0:
+		return -1.0
+	return (100.0 - s.engine_heat) / hot
 
-func stop_hold(actor: String) -> void:
-	holds.erase(actor)
-
-func click_work(target: String, quick_station: String = "", actor: String = "") -> void:
-	var task: Dictionary = target_task(target)
-	if task.is_empty() or not task.mash:
-		return
-	if not _can_work(target, task, quick_station):
-		return
-	mash[target] = minf(1.0, float(mash.get(target, 0.0)) + 0.13)
-	if mash[target] >= 1.0:
-		last_actor = actor
-		_finish(target, task)
-
-func _can_work(target: String, task: Dictionary, quick_station: String) -> bool:
-	if quick_station == "":
-		return true
-	# Quick fixes at your own post: only your own modules, and only soft faults (not failed, not fire/breach).
-	if not target.begins_with("mod:"):
-		return false
-	var id: String = target.substr(4)
-	var m: Dictionary = ship.modules[id]
-	if m.owner != quick_station:
-		return false
-	if task.kind in ["fire", "breach"]:
-		return false
-	if ship.mod_state(id) >= 3:
-		return false
-	return true
-
-func _finish(target: String, task: Dictionary) -> void:
-	mash.erase(target)
-	if target.begins_with("trc:"):
-		var tcid: String = target.substr(4)
-		ship.conduits[tcid].hidden = false
-		trace_prog.erase(tcid)
-		return
-	stats["repairs"] = int(stats["repairs"]) + 1
-	if target.begins_with("con:"):
-		ship.repair_conduit(target.substr(4))
-		return
-	var id: String = target.substr(4)
-	var m: Dictionary = ship.modules[id]
-	match task.kind:
-		"fire":
-			m.fire = 0.0
-			m.fire_t = 0.0
-			m.work = 0.0
-			stats["fires_put_out"] = int(stats["fires_put_out"]) + 1
-			emit("fire_out", {"id": id, "label": m.label})
-		"breach":
-			m.breach = false
-			m.work = 0.0
-			emit("breach_sealed", {"id": id, "label": m.label})
-		_:
-			ship.repair_module(id)
-
-func _work_step(dt: float) -> void:
-	for actor in holds.keys():
-		var h: Dictionary = holds[actor]
-		var target: String = h.target
-		var task: Dictionary = target_task(target)
-		if task.is_empty() or task.mash:
+func incoming() -> Array:
+	## enemy shots that will reach us in the next ~3 seconds: [{rel, eta, covered}]
+	var out: Array = []
+	var s: Ship = ship
+	for sh in shots:
+		if sh.from != "them":
 			continue
-		if not _can_work(target, task, h.quick):
+		var to: Vector2 = s.pos - sh.pos
+		var closing: float = sh.vel.dot(to.normalized())
+		if closing <= 0.0:
 			continue
-		var rate: float = float(task.rate) * (1.5 if h.quick != "" else 1.0)
-		if target.begins_with("trc:"):
-			var tcid2: String = target.substr(4)
-			trace_prog[tcid2] = float(trace_prog.get(tcid2, 0.0)) + rate * dt
-			if trace_prog[tcid2] >= 1.0:
-				last_actor = actor
-				_finish(target, task)
-				holds.erase(actor)
-			continue
-		if target.begins_with("con:"):
-			var cid: String = target.substr(4)
-			var c: Dictionary = ship.conduits[cid]
-			if not ship.isolate[cid]:
-				c.zap = float(c.zap) + dt
-				if c.zap > 2.5:
-					c.zap = 0.0
-					c.work = 0.0
-					zap_events.append(cid)
-					emit("zap", {"id": cid})
-					continue
-			c.work = float(c.work) + rate * dt
-			if c.work >= 1.0:
-				last_actor = actor
-				_finish(target, task)
-				holds.erase(actor)
-			continue
-		var id: String = target.substr(4)
-		var m: Dictionary = ship.modules[id]
-		m.work = float(m.work) + rate * dt
-		if m.work >= 1.0:
-			last_actor = actor
-			_finish(target, task)
-			holds.erase(actor)
-	# mash decay
-	for k in mash.keys():
-		mash[k] = float(mash[k]) - 0.25 * dt
-		if mash[k] <= 0.0:
-			mash.erase(k)
-	# work decays when nobody holds
-	for id in ship.mod_order:
-		var m2: Dictionary = ship.modules[id]
-		if m2.work > 0.0 and not _held("mod:" + id):
-			m2.work = maxf(0.0, float(m2.work) - 0.2 * dt)
-	for cid in K.CONDUITS:
-		var c2: Dictionary = ship.conduits[cid]
-		if c2.work > 0.0 and not _held("con:" + cid):
-			c2.work = maxf(0.0, float(c2.work) - 0.2 * dt)
-		if c2.zap > 0.0 and not _held("con:" + cid):
-			c2.zap = 0.0
-
-func _held(target: String) -> bool:
-	for a in holds.keys():
-		if holds[a].target == target:
-			return true
-	return false
-
-func weakest_threat_facing() -> int:
-	var best: int = 0
-	var bd: float = 1e9
+		var eta: float = to.length() / closing
+		if eta < 3.0:
+			var from_dir: float = (sh.pos - s.pos).angle()
+			out.append({"rel": K.wrap_pi(from_dir - s.heading), "eta": eta, "covered": s.shield_covers(from_dir)})
 	for e in ents:
-		if e.dead or not (e.kind in ["grabber", "snatch", "patrol", "bastion", "magnificence", "ebullet", "eshell"]):
-			continue
-		var d: float = e.pos.distance_to(ship.pos) - float(e.r)
-		if d < bd:
-			bd = d
-			var a: float = (e.pos - ship.pos).angle() - ship.heading
-			a = K.wrap_pi(a)
-			if a > PI / 4.0 and a <= 3.0 * PI / 4.0:
-				best = 1
-			elif a > -3.0 * PI / 4.0 and a <= -PI / 4.0:
-				best = 3
-			elif absf(a) > 3.0 * PI / 4.0:
-				best = 2
-			else:
-				best = 0
-	return best
-
-# ---------------------------------------------------------------- weapons rules
-
-func _weapons_step(dt: float) -> void:
-	var pw: float = ship.pf("weapons")
-	for id in ["TUR_A", "TUR_B"]:
-		var m: Dictionary = ship.modules[id]
-		if load_hold.get(id, false) and not m.loaded and ship.online(id) and pw > 0.0:
-			m.load_p += dt / 1.2 * maxf(0.5, pw)
-			if m.load_p >= 1.0:
-				m.loaded = true
-				m.load_p = 0.0
-		# tracking assist
-		if track.get(id, false) and ship.online(id):
-			var tgt: Dictionary = find(lock_id)
-			if not tgt.is_empty():
-				var aim: Vector2 = _lead_point(tgt, 220.0)
-				if lock_weak and tgt.kind == "bastion":
-					aim = weak_pos(tgt)
-				var local_ang: float = K.wrap_pi((aim - turret_pos(id)).angle() - ship.heading)
-				m.tgt = ship.clamp_arc(id, local_ang)
-		# jammed turret fires on its own
-		if m.fault == "jam" and ship.mod_state(id) >= 2 and m.loaded and m.cd <= 0.0 and rng.randf() < 0.01:
-			fire_turret(id, true)
-		if m.loaded == false and m.fault == "jam" and ship.mod_state(id) >= 2:
-			m.loaded = true
-	var tube: Dictionary = ship.modules["TUBE"]
-	if load_hold.get("TUBE", false) and tube.tstate == "empty" and ship.online("TUBE") and pw > 0.0:
-		tube.load_p += dt / 3.0 * maxf(0.5, pw)
-		if tube.load_p >= 1.0:
-			tube.tstate = "loaded"
-			tube.load_p = 0.0
-	if tube.tstate == "arming":
-		tube.arm_p += dt / 1.6
-		if tube.arm_p >= 1.0:
-			tube.tstate = "armed"
-			tube.arm_p = 0.0
-
-func turret_pos(id: String) -> Vector2:
-	var m: Dictionary = ship.modules[id]
-	return ship.local_to_world(Vector2(m.lx, m.ly))
-
-func _lead_point(tgt: Dictionary, speed: float) -> Vector2:
-	var d: float = tgt.pos.distance_to(ship.pos)
-	var tof: float = d / speed
-	return tgt.pos + (tgt.vel - ship.vel) * tof
-
-func fire_turret(id: String, forced: bool = false) -> bool:
-	var m: Dictionary = ship.modules[id]
-	if stowed and not forced:
-		return false
-	if not ship.online(id) or not m.loaded or m.cd > 0.0 or ship.pf("weapons") <= 0.0:
-		return false
-	var dir: Vector2 = Vector2.from_angle(ship.heading + float(m.ang))
-	var o: Vector2 = turret_pos(id) + dir * 3.0
-	spawn("bullet", o, {"vel": dir * 220.0 + ship.vel, "ang": dir.angle()})
-	m.loaded = false
-	m.load_p = 0.0
-	m.heat += 18.0
-	m.cd = 0.35 / maxf(0.4, ship.pf("weapons"))
-	stats["shots"] = int(stats["shots"]) + 1
-	emit("shot", {"id": id})
-	return true
-
-func fire_torp() -> bool:
-	var tube: Dictionary = ship.modules["TUBE"]
-	if tube.tstate != "armed" or not ship.online("TUBE") or stowed:
-		return false
-	var dir: Vector2 = ship.fwd()
-	var tgt: Dictionary = find(lock_id)
-	spawn("torp", ship.pos + dir * 10.0, {"vel": dir * 75.0 + ship.vel * 0.5, "ang": dir.angle(), "target": lock_id if not tgt.is_empty() else -1, "weak": lock_weak})
-	tube.tstate = "empty"
-	tube.load_p = 0.0
-	stats["torps"] = int(stats["torps"]) + 1
-	emit("torp_fired", {})
-	return true
+		if e.alive and e.ai == "thrown":
+			var to2: Vector2 = s.pos - e.pos
+			var cl: float = e.vel.dot(to2.normalized())
+			if cl > 0.0 and to2.length() / cl < 4.0:
+				var fd: float = (e.pos - s.pos).angle()
+				out.append({"rel": K.wrap_pi(fd - s.heading), "eta": to2.length() / cl, "covered": s.shield_covers(fd)})
+	return out
