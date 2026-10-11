@@ -21,7 +21,8 @@ var dock_seats: HBoxContainer
 var igor_pic: TextureRect
 var igor_who: Label
 var igor_text: Label
-var toasts: VBoxContainer
+var toast_chip: PanelContainer
+var _toast_tw: Tween
 var pause_panel: Control
 var briefing_ui: BriefingUI
 var overlay: Control = null
@@ -106,19 +107,12 @@ func _ready() -> void:
 	igor_text.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	igor_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	iv.add_child(igor_text)
-	# ---- toasts, pause, briefing
-	toasts = UIK.vbox(6)
-	toasts.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
-	toasts.grow_vertical = Control.GROW_DIRECTION_BEGIN
-	toasts.alignment = BoxContainer.ALIGNMENT_END
-	toasts.offset_left = -300
-	toasts.offset_right = 300
-	toasts.offset_top = -240
-	toasts.offset_bottom = -(DOCK_H + 30)
-	toasts.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	toasts.set_meta("overlay", true)
-	toasts.z_index = 30
-	add_child(toasts)
+	# the latest news sits in a fixed slot at the end of the dock, so it never covers a control
+	toast_chip = UIK.chip("", "cream", "", 18)
+	toast_chip.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	toast_chip.modulate.a = 0.0
+	ih.add_child(toast_chip)
+	# ---- pause, briefing
 	briefing_ui = BriefingUI.new()
 	briefing_ui.z_index = 20
 	briefing_ui.visible = false
@@ -197,8 +191,7 @@ func reset() -> void:
 	_seats_sig = ""
 	_phase = ""
 	_debrief_sig = ""
-	for c in toasts.get_children():
-		c.queue_free()
+	toast_chip.modulate.a = 0.0
 	_clear_overlay()
 	briefing_ui.visible = false
 	pause_panel.visible = false
@@ -318,14 +311,14 @@ func on_event(d: Dictionary) -> void:
 		"mission_start":
 			UIK.sfx("whoosh")
 
-func toast(text: String, kind: String = "info", who: String = "") -> void:
+func toast(text: String, kind: String = "info", _who: String = "") -> void:
 	var col: String = {"bad": "red", "good": "green", "step": "mustard", "info": "cream"}.get(kind, "cream")
-	var p: PanelContainer = UIK.chip(text, col, "", 18)
-	p.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	toasts.add_child(p)
-	if toasts.get_child_count() > 3:
-		toasts.get_child(0).queue_free()
-	var tw: Tween = p.create_tween()
-	tw.tween_interval(3.2)
-	tw.tween_property(p, "modulate:a", 0.0, 0.5)
-	tw.tween_callback(p.queue_free)
+	if text.length() > 34:
+		text = text.left(33) + "…"
+	UIK.set_chip(toast_chip, text, col)
+	if _toast_tw != null and _toast_tw.is_valid():
+		_toast_tw.kill()
+	toast_chip.modulate.a = 1.0
+	_toast_tw = toast_chip.create_tween()
+	_toast_tw.tween_interval(3.0)
+	_toast_tw.tween_property(toast_chip, "modulate:a", 0.0, 0.5)

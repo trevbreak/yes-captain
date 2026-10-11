@@ -90,22 +90,9 @@ func _draw() -> void:
 			var dir: Vector2 = (gp - c).normalized()
 			draw_colored_polygon(PackedVector2Array([gpe + dir * 18.0, gpe + dir.orthogonal() * 12.0, gpe - dir.orthogonal() * 12.0]), UIK.c("red"))
 			var dist: String = "%dm" % int(_vec(goal).distance_to(sp))
-			draw_string_outline(f, gpe - dir * 30.0 + Vector2(-20, 6), dist, HORIZONTAL_ALIGNMENT_LEFT, -1, 18, 6, UIK.c("cream"))
-			draw_string(f, gpe - dir * 30.0 + Vector2(-20, 6), dist, HORIZONTAL_ALIGNMENT_LEFT, -1, 18, UIK.c("red"))
-	# clock face round our ship (12 = nose)
-	var cr: float = 74.0
-	draw_arc(c, cr, 0.0, TAU, 64, Color(UIK.ink(), 0.25), 2.0, true)
-	for h in 12:
-		var a: float = hd + h * TAU / 12.0
-		var p0: Vector2 = c + Vector2.from_angle(a) * (cr - 6.0)
-		var p1: Vector2 = c + Vector2.from_angle(a) * (cr + (8.0 if h % 3 == 0 else 3.0))
-		draw_line(p0, p1, Color(UIK.ink(), 0.6), 2.5 if h % 3 == 0 else 1.5, true)
-		if h % 3 == 0:
-			var lbl: String = str(12 if h == 0 else h)
-			var lp: Vector2 = c + Vector2.from_angle(a) * (cr + 20.0)
-			var ls: Vector2 = f.get_string_size(lbl, HORIZONTAL_ALIGNMENT_LEFT, -1, 17)
-			draw_string_outline(f, lp + Vector2(-ls.x / 2.0, 6), lbl, HORIZONTAL_ALIGNMENT_LEFT, -1, 17, 5, Color("#e9dcbb"))
-			draw_string(f, lp + Vector2(-ls.x / 2.0, 6), lbl, HORIZONTAL_ALIGNMENT_LEFT, -1, 17, UIK.ink())
+			var dp: Vector2 = gpe + dir.orthogonal() * 26.0 + Vector2(-18, 6)
+			draw_string_outline(f, dp, dist, HORIZONTAL_ALIGNMENT_LEFT, -1, 18, 8, Color("#e9dcbb"))
+			draw_string(f, dp, dist, HORIZONTAL_ALIGNMENT_LEFT, -1, 18, UIK.c("red"))
 	# entities
 	for e in v.get("ents", []):
 		var p: Vector2 = to_s.call(_vec(e.pos))
@@ -146,7 +133,8 @@ func _draw() -> void:
 			var nm: String = str(e.name) if kind != "unknown" else "?"
 			if kind == "unknown":
 				pass
-			elif kind not in ["junk", "rock"] or not bool(e.get("thrown", false)):
+			elif (kind not in ["junk", "rock"] or not bool(e.get("thrown", false))) and p.distance_to(c) > 95.0:
+				# skip names close to our ship: the clock face lives there
 				_label(p + Vector2(-sz.x / 2.0, sz.y / 2.0 + 15.0), nm, UIK.c("red") if bool(e.hostile) else UIK.ink())
 	# shots
 	for s in v.get("shots", []):
@@ -208,6 +196,20 @@ func _draw() -> void:
 	draw_set_transform(c, hd + float(ship.get("aim", 0.0)) + PI / 2.0, Vector2.ONE)
 	draw_texture_rect(ttex, Rect2(Vector2(-9, -19), Vector2(18, 30)), false)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	# clock face round our ship (12 = nose), on top so the numbers are always readable
+	var cr: float = 74.0
+	draw_arc(c, cr, 0.0, TAU, 64, Color(UIK.ink(), 0.25), 2.0, true)
+	for h in 12:
+		var a: float = hd + h * TAU / 12.0
+		var p0: Vector2 = c + Vector2.from_angle(a) * (cr - 6.0)
+		var p1: Vector2 = c + Vector2.from_angle(a) * (cr + (8.0 if h % 3 == 0 else 3.0))
+		draw_line(p0, p1, Color(UIK.ink(), 0.6), 2.5 if h % 3 == 0 else 1.5, true)
+		if h % 3 == 0:
+			var lbl: String = str(12 if h == 0 else h)
+			var lp: Vector2 = c + Vector2.from_angle(a) * (cr + 20.0)
+			var ls: Vector2 = f.get_string_size(lbl, HORIZONTAL_ALIGNMENT_LEFT, -1, 17)
+			draw_string_outline(f, lp + Vector2(-ls.x / 2.0, 6), lbl, HORIZONTAL_ALIGNMENT_LEFT, -1, 17, 5, Color("#e9dcbb"))
+			draw_string(f, lp + Vector2(-ls.x / 2.0, 6), lbl, HORIZONTAL_ALIGNMENT_LEFT, -1, 17, UIK.ink())
 	# compass + scale
 	_compass(Vector2(size.x - 44.0, 46.0))
 	var bar_m: int = 100 if view_r < 600.0 else 200

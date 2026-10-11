@@ -30,28 +30,22 @@ func _ready() -> void:
 	cw[0].size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	cw[0].size_flags_stretch_ratio = 1.05
 	row.add_child(cw[0])
-	var holder: Control = Control.new()
-	holder.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	holder.clip_contents = true
-	(cw[1] as VBoxContainer).add_child(holder)
+	# LOOK OUT! is a fixed strip above the chart: it never covers what it's warning about
+	warn_panel = UIK.panel("well", [0, -6, 0, -6])
+	warn_panel.custom_minimum_size = Vector2(0, 92)
+	(cw[1] as VBoxContainer).add_child(warn_panel)
+	var wh: HBoxContainer = UIK.hbox(8)
+	warn_panel.add_child(wh)
+	var wt: Label = UIK.head("LOOK\nOUT!", 18, UIK.c("red"))
+	wt.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	wh.add_child(wt)
+	warn_box = UIK.vbox(1)
+	warn_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	warn_box.alignment = BoxContainer.ALIGNMENT_CENTER
+	wh.add_child(warn_box)
 	chart = Chart.new()
-	chart.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	holder.add_child(chart)
-	# LOOK OUT! sits on the chart, top-left, only when something is wrong
-	warn_panel = UIK.panel("panel_small", [0, -2, 0, -2])
-	warn_panel.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
-	warn_panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
-	warn_panel.grow_vertical = Control.GROW_DIRECTION_BEGIN
-	warn_panel.offset_right = -8
-	warn_panel.offset_bottom = -8
-	warn_panel.custom_minimum_size = Vector2(330, 0)
-	warn_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	holder.add_child(warn_panel)
-	var wv: VBoxContainer = UIK.vbox(2)
-	warn_panel.add_child(wv)
-	wv.add_child(UIK.head("LOOK OUT!", 18, UIK.c("red")))
-	warn_box = UIK.vbox(3)
-	wv.add_child(warn_box)
+	chart.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	(cw[1] as VBoxContainer).add_child(chart)
 	# ---- the right column
 	var right: VBoxContainer = UIK.vbox(10)
 	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -109,11 +103,18 @@ func _ready() -> void:
 		var nm: Label = UIK.head(K.seat_name(st).to_upper(), 15, K.seat_color(st).darkened(0.25))
 		cv.add_child(nm)
 		var ln: Label = UIK.label("", 16)
-		ln.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		ln.custom_minimum_size = Vector2(130, 0)
-		ln.max_lines_visible = 2
+		ln.clip_text = true
+		ln.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		ln.custom_minimum_size = Vector2(120, 0)
+		ln.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		cv.add_child(ln)
-		crew_cells[st] = {"line": ln, "name": nm, "pic": pr}
+		var wl: Label = UIK.label("", 16, UIK.c("red"))
+		wl.clip_text = true
+		wl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		wl.custom_minimum_size = Vector2(120, 0)
+		wl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		cv.add_child(wl)
+		crew_cells[st] = {"line": ln, "warn": wl, "name": nm, "pic": pr}
 
 func apply(v: Dictionary, com: Dictionary) -> void:
 	var feats: Dictionary = com.get("features", {})
@@ -142,8 +143,9 @@ func apply(v: Dictionary, com: Dictionary) -> void:
 		_warn_sig = sig
 		for c in warn_box.get_children():
 			c.queue_free()
-		warn_panel.visible = not warns.is_empty()
-		for w in warns.slice(0, 4):
+		if warns.is_empty():
+			warn_box.add_child(UIK.label("All quiet. Suspiciously quiet.", 18, K.pal("ink_soft")))
+		for w in warns.slice(0, 3):
 			warn_box.add_child(_warn_row(w))
 	# the ship
 	var bd: Dictionary = v.get("board", {})
@@ -177,25 +179,35 @@ func apply(v: Dictionary, com: Dictionary) -> void:
 		var cl: Dictionary = crew.get(st, {})
 		var cell: Dictionary = crew_cells[st]
 		(cell.line as Label).text = str(cl.get("text", ""))
+		(cell.line as Label).tooltip_text = (cell.line as Label).text
 		var al: int = int(cl.get("alert", 0))
-		(cell.line as Label).add_theme_color_override("font_color", UIK.c("red") if al >= 2 else (Color("#9a6a10") if al == 1 else UIK.ink()))
+		var wl2: Label = cell.warn
+		wl2.text = str(cl.get("warn", ""))
+		wl2.add_theme_color_override("font_color", UIK.c("red") if al >= 2 else Color("#9a6a10"))
+		if al >= 2:
+			wl2.add_theme_font_override("font", UIK.font("head"))
+			wl2.add_theme_font_size_override("font_size", 14)
+		else:
+			wl2.add_theme_font_override("font", UIK.font("body"))
+			wl2.add_theme_font_size_override("font_size", 16)
 
 func _warn_row(w: Dictionary) -> Control:
 	var h: HBoxContainer = UIK.hbox(6)
 	var lvl: int = int(w.get("level", 1))
 	var col: Color = UIK.c("red") if lvl >= 3 else (UIK.c("orange") if lvl == 2 else Color("#9a6a10"))
-	h.add_child(UIK.icon("warning" if lvl >= 2 else "eye", 20, col))
-	var l: Label = UIK.label(str(w.text), 18, col)
-	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	h.add_child(UIK.icon("warning" if lvl >= 2 else "eye", 18, col))
+	var l: Label = UIK.label(str(w.text), 17, col)
+	l.clip_text = true
+	l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	l.custom_minimum_size = Vector2(150, 0)
+	l.custom_minimum_size = Vector2(200, 0)
 	if lvl >= 3:
 		l.add_theme_font_override("font", UIK.font("head"))
-		l.add_theme_font_size_override("font_size", 16)
+		l.add_theme_font_size_override("font_size", 15)
 	h.add_child(l)
 	var who: String = str(w.get("who", ""))
 	if who != "":
-		var pr: TextureRect = UIK.portrait(who, 28)
+		var pr: TextureRect = UIK.portrait(who, 22)
 		pr.tooltip_text = "Tell " + K.seat_name(who)
 		h.add_child(pr)
 	return h

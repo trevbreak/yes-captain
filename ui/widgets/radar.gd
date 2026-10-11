@@ -60,8 +60,8 @@ func _draw() -> void:
 	var f: Font = UIK.font("head")
 	_hits.clear()
 	if not ok:
-		draw_string_outline(f, c + Vector2(-110, 10), "SENSORS BROKEN", HORIZONTAL_ALIGNMENT_LEFT, -1, 30, 8, UIK.ink())
-		draw_string(f, c + Vector2(-110, 10), "SENSORS BROKEN", HORIZONTAL_ALIGNMENT_LEFT, -1, 30, UIK.c("red"))
+		draw_string_outline(f, c + Vector2(-110, -50), "SENSORS BROKEN", HORIZONTAL_ALIGNMENT_LEFT, -1, 30, 8, UIK.ink())
+		draw_string(f, c + Vector2(-110, -50), "SENSORS BROKEN", HORIZONTAL_ALIGNMENT_LEFT, -1, 30, UIK.c("red"))
 		# static
 		for i in 60:
 			var a: float = randf() * TAU

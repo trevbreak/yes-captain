@@ -38,7 +38,11 @@ func build() -> void:
 	col.add_child(UIK.para("The captain calls the clock: \"incoming at 3 o'clock!\" Turn the purple shield to face it.", 19))
 	status = UIK.para("", 20, UIK.c("red"))
 	col.add_child(status)
-	tr_box = side_window("TRACTOR BEAM", "lilac", "tractor")
+	# the tractor beam lives on the console, beside the dial
+	tr_box = UIK.vbox(6)
+	col.add_child(UIK.spacer(false, Vector2(0, 10)))
+	col.add_child(tr_box)
+	tr_box.add_child(UIK.ribbon("TRACTOR BEAM", "lilac", "tractor", 17))
 	var th: HBoxContainer = UIK.hbox(8)
 	tr_box.add_child(th)
 	tr_btn = BigButton.new("PULL", "purple", true, 74)
@@ -97,7 +101,7 @@ func refresh(v: Dictionary, _com: Dictionary) -> void:
 	dial.stuck = v.get("stuck", [])
 	dial.queue_redraw()
 	status.text = "Shield is BROKEN! Ask the Engineer!" if not bool(v.get("ok", true)) else ("Something is STUCK to us! Point the shield at it." if not dial.stuck.is_empty() else "")
-	tr_box.get_parent().get_parent().visible = feat("tractor")
+	tr_box.visible = feat("tractor")
 	var tr: Dictionary = v.get("tractor", {})
 	if not tr.is_empty():
 		var d: float = float(tr.get("dist", -1.0))

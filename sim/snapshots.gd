@@ -176,104 +176,112 @@ static func _stuck(w: World) -> Array:
 
 static func _turn_words(v: float) -> String:
 	if absf(v) < 0.08:
-		return "Wheel centred: flying straight"
+		return "Straight"
 	var side: String = "left" if v < 0.0 else "right"
 	if absf(v) > 0.8:
-		return "Turning HARD %s" % side
+		return "HARD " + side
 	if absf(v) > 0.4:
-		return "Turning %s" % side
-	return "Turning gently %s" % side
+		return "Turning " + side
+	return "Gently " + side
 
 static func crew_lines(w: World) -> Dictionary:
-	## one live line per crew member, plus an alert level (0 fine, 1 heads-up, 2 trouble)
+	## per crew member: a short "what they're doing" line, a short warning, and an alert level (0 fine, 1 heads-up, 2 trouble)
 	var s: Ship = w.ship
 	var out: Dictionary = {}
-	var hl: String = "%s · heading %03d°" % [_turn_words(s.wheel), K.bearing_deg(s.heading)]
+	# helm
+	var hw: String = ""
 	var ha: int = 0
 	if not s.ok("bridge"):
-		hl = "Steering BROKEN (turns slowly)"
+		hw = "STEERING BROKEN"
 		ha = 2
 	elif s.throttle > 0.05 and s.engines_working() == 1:
-		hl += " · ship is pulling %s" % ("left" if not s.ok("engine_p") else "right")
+		hw = "ship pulls %s" % ("left" if not s.ok("engine_p") else "right")
 		ha = 1
-	out["helm"] = {"text": hl, "alert": ha}
-	var el: String = "Throttle %d%% · %d m/s" % [int(round(s.throttle * 100.0)), int(s.speed())]
+	elif w.shake_t > 0.3:
+		hw = "spinning!"
+		ha = 1
+	out["helm"] = {"text": "%s · %03d°" % [_turn_words(s.wheel), K.bearing_deg(s.heading)], "warn": hw, "alert": ha}
+	# engines
+	var ew: String = ""
 	var ea: int = 0
-	if s.boost and w.feat("boost"):
-		el += " · BOOSTING"
-		ea = 1
-	if w.feat("heat") and s.engine_heat > 60.0:
-		el += " · engines %d%% hot" % int(s.engine_heat)
-		ea = 2 if s.engine_heat > 80.0 else 1
 	if s.engines_working() < 2:
-		el += " · %s engine%s down" % ["one" if s.engines_working() == 1 else "both", "" if s.engines_working() == 1 else "s"]
+		ew = "ONE ENGINE DOWN" if s.engines_working() == 1 else "BOTH ENGINES DOWN"
 		ea = 2
-	out["engines"] = {"text": el, "alert": ea}
-	var wl: String = "Turret at %d o'clock" % K.clock(s.aim)
+	elif w.feat("heat") and s.engine_heat > 60.0:
+		ew = "engines %d%% HOT" % int(s.engine_heat)
+		ea = 2 if s.engine_heat > 80.0 else 1
+	elif s.boost and w.feat("boost"):
+		ew = "BOOSTING"
+		ea = 1
+	out["engines"] = {"text": "Throttle %d%% · %d m/s" % [int(round(s.throttle * 100.0)), int(s.speed())], "warn": ew, "alert": ea}
+	# weapons
+	var wt: String = "Gun at %d o'clock%s" % [K.clock(s.aim), " · FIRING" if s.firing else ""]
+	var ww: String = ""
 	var wa: int = 0
-	if s.firing:
-		wl += " · FIRING"
 	if not s.ok("gun"):
-		wl = "Gun BROKEN"
+		ww = "GUN BROKEN"
 		wa = 2
 	elif w.feat("heat") and s.gun_heat > 60.0:
-		wl += " · gun %d%% hot" % int(s.gun_heat)
+		ww = "gun %d%% HOT" % int(s.gun_heat)
 		wa = 2 if s.gun_heat > 80.0 else 1
-	if w.feat("torpedo") and s.torp != "empty":
-		wl += " · torpedo %s" % ("READY" if s.torp == "ready" else "loading")
-	out["weapons"] = {"text": wl, "alert": wa}
-	var sl: String = "Idle"
-	var sa: int = 0
+	elif w.feat("torpedo") and s.torp == "ready":
+		ww = "torpedo READY"
+		wa = 1
+	elif w.feat("torpedo") and s.torp == "loading":
+		ww = "loading torpedo"
+	out["weapons"] = {"text": wt, "warn": ww, "alert": wa}
+	# sensors
+	var st: String = "Idle"
 	if w.scanning and w.scan_target >= 0:
-		var e: Dictionary = w.ent(w.scan_target)
-		sl = "Scanning %s · %d%%" % [_name(e) if not e.is_empty() else "?", int(w.scan_prog * 100.0)]
+		st = "Scanning · %d%%" % int(w.scan_prog * 100.0)
+	var sw: String = ""
+	var sa: int = 0
 	var unknown: int = 0
 	for e2 in w.ents:
 		if e2.alive and not e2.scanned and e2.ai != "thrown":
 			unknown += 1
-	if unknown > 0 and not w.scanning:
-		sl = "%d unknown contact%s to scan" % [unknown, "" if unknown == 1 else "s"]
-		sa = 1
-	if w.feat("comms") and not w.hail.is_empty():
-		if w.hail.heard:
-			sl = "Has a message from %s!" % w.hail.from
-			sa = 1
-		else:
-			sl = "Tuning comms: signal %d%%" % int(float(w.hail.get("signal", 0.0)) * 100.0)
-			sa = 1
 	if not s.ok("sensors"):
-		sl = "Sensors BROKEN (radar is blank)"
+		sw = "SENSORS BROKEN"
 		sa = 2
-	out["sensors"] = {"text": sl, "alert": sa}
-	var shl: String = "Shield facing %d o'clock" % K.clock(s.shield_dir)
+	elif w.feat("comms") and not w.hail.is_empty():
+		sw = "HAS A MESSAGE!" if w.hail.heard else "tuning comms %d%%" % int(float(w.hail.get("signal", 0.0)) * 100.0)
+		sa = 1
+	elif unknown > 0:
+		sw = "%d unknown to scan" % unknown
+		sa = 1
+	out["sensors"] = {"text": st, "warn": sw, "alert": sa}
+	# shields
+	var sht: String = "Shield at %d o'clock" % K.clock(s.shield_dir)
+	if s.tractor_on and w.feat("tractor"):
+		sht += " · PULLING"
+	var shw: String = ""
 	var sha: int = 0
 	if not s.ok("shield"):
-		shl = "Shield BROKEN"
+		shw = "SHIELD BROKEN"
 		sha = 2
-	if s.tractor_on and w.feat("tractor"):
-		shl += " · TRACTOR on"
-	if w.feat("pudding"):
-		if s.pud_out:
-			shl += " · calling Pudding back" if s.tin else " · Pudding ESCAPED"
-			sha = 2
-		elif s.petting:
-			shl += " · petting Pudding"
-	out["shields"] = {"text": shl, "alert": sha}
-	var gl: String = "Idle"
-	var ga: int = 0
+	elif w.feat("pudding") and s.pud_out:
+		shw = "calling Pudding back" if s.tin else "PUDDING ESCAPED"
+		sha = 2
+	elif w.feat("pudding") and s.petting:
+		shw = "petting Pudding"
+	out["shields"] = {"text": sht, "warn": shw, "alert": sha}
+	# engineer
+	var gt: String = "Idle"
 	if s.repair_target != "" and s.repairing:
-		gl = "%s %s · %d%%" % ["Putting out fire in" if s.on_fire(s.repair_target) else "Fixing", Ship.SYS_NAME[s.repair_target],
+		gt = "%s %s · %d%%" % ["Fire in" if s.on_fire(s.repair_target) else "Fixing", Ship.SYS_NAME[s.repair_target].to_lower(),
 			int(s.repair_prog * 100.0)]
 	var broken: int = 0
 	for id in Ship.SYSTEMS:
 		if s.broken(id):
 			broken += 1
-	if broken > 0 and not s.repairing:
-		gl = "%d thing%s broken" % [broken, "" if broken == 1 else "s"]
-		ga = 2
-	if w.feat("power"):
-		gl += " · power %d/%d/%d" % [int(s.power.engines), int(s.power.weapons), int(s.power.shields)]
-	out["engineer"] = {"text": gl, "alert": ga}
+	var gw: String = ""
+	var ga: int = 0
+	if broken > 0:
+		gw = "%d thing%s broken" % [broken, "" if broken == 1 else "s"]
+		ga = 2 if not s.repairing else 1
+	elif w.feat("power"):
+		gw = "power %d / %d / %d" % [int(s.power.engines), int(s.power.weapons), int(s.power.shields)]
+	out["engineer"] = {"text": gt, "warn": gw, "alert": ga}
 	return out
 
 static func forecasts(w: World) -> Array:

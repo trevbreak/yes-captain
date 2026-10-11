@@ -28,6 +28,25 @@ func _init(text: String = "FIRE", col: String = "red", is_hold: bool = true, px:
 func _ready() -> void:
 	_up = Art.tex("bigbtn_" + colour, 1.2)
 	_dn = Art.tex("bigbtn_%s_down" % colour, 1.2)
+	_fit_label()
+
+func _label_text() -> String:
+	return label + ("  [%s]" % key_hint if key_hint != "" else "")
+
+func _font_size() -> int:
+	return 24 if label.length() < 9 else 19
+
+func _fit_label() -> void:
+	## the caption is drawn under the button: make sure the control is wide enough to hold it
+	var w: float = UIK.font("head").get_string_size(_label_text(), HORIZONTAL_ALIGNMENT_LEFT, -1, _font_size()).x + 6.0
+	if custom_minimum_size.x < w:
+		custom_minimum_size.x = w
+
+func set_label(t: String) -> void:
+	if t != label:
+		label = t
+		_fit_label()
+		queue_redraw()
 
 func set_disabled(v: bool) -> void:
 	if v != disabled:
@@ -81,8 +100,8 @@ func _draw() -> void:
 		if progress > 0.0:
 			draw_arc(c, s * 0.47, -PI / 2.0, -PI / 2.0 + TAU * progress, 48, UIK.c("green"), 9.0, true)
 	var f: Font = UIK.font("head")
-	var fs: int = 24 if label.length() < 9 else 19
-	var txt: String = label + ("  [%s]" % key_hint if key_hint != "" else "")
+	var fs: int = _font_size()
+	var txt: String = _label_text()
 	var ts: Vector2 = f.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
 	var p: Vector2 = Vector2(size.x / 2.0 - ts.x / 2.0, size.y - 6.0)
 	draw_string(f, p, txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(UIK.ink(), 0.4 if disabled else 1.0))

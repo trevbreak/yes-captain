@@ -92,6 +92,6 @@ func _draw() -> void:
 		draw_circle(c + Vector2(0, inner * 0.7), 26.0, Color(UIK.c("yellow"), 0.7))
 	if not gun_ok:
 		var f2: Font = UIK.font("head")
-		draw_string_outline(f2, c + Vector2(-92, 8), "GUN BROKEN", HORIZONTAL_ALIGNMENT_LEFT, -1, 30, 8, UIK.ink())
-		draw_string(f2, c + Vector2(-92, 8), "GUN BROKEN", HORIZONTAL_ALIGNMENT_LEFT, -1, 30, UIK.c("red"))
+		draw_string_outline(f2, c + Vector2(-92, -inner * 0.3), "GUN BROKEN", HORIZONTAL_ALIGNMENT_LEFT, -1, 30, 8, UIK.ink())
+		draw_string(f2, c + Vector2(-92, -inner * 0.3), "GUN BROKEN", HORIZONTAL_ALIGNMENT_LEFT, -1, 30, UIK.c("red"))
 	draw_texture_rect(_bezel, Rect2(c - Vector2(r, r), Vector2(r, r) * 2.0), false)

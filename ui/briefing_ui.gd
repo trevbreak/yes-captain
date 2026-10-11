@@ -95,6 +95,7 @@ func _ready() -> void:
 	jw[0].size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	main.add_child(jw[0])
 	var js: ScrollContainer = ScrollContainer.new()
+	js.set_meta("scroll_ok", true)
 	js.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	js.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	(jw[1] as VBoxContainer).add_child(js)

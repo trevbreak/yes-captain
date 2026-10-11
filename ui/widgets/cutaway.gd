@@ -93,6 +93,32 @@ func _stamp(c: Vector2, text: String, col: Color, rot: float, fs: int) -> void:
 	draw_string(f, Vector2(-ts.x / 2.0, ts.y * 0.32), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, col)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
+func _compact(rr: Rect2, state: String, st: Dictionary, id: String) -> void:
+	## small ship board (the captain's): icons that always fit inside the room
+	var c: Vector2 = rr.get_center()
+	var r: float = minf(rr.size.x, rr.size.y) * 0.32
+	var t: float = Time.get_ticks_msec() / 1000.0
+	if state == "fire":
+		draw_rect(rr.grow(-2.0), Color(UIK.c("red"), 0.3 + 0.15 * sin(t * 8.0)))
+		var fsz: float = minf(rr.size.x, rr.size.y) * 0.8
+		draw_texture_rect(_flame, Rect2(c - Vector2(fsz * 0.4, fsz * 0.5), Vector2(fsz * 0.8, fsz)), false)
+	elif state == "broken":
+		draw_rect(rr.grow(-2.0), Color(UIK.c("red"), 0.18))
+		draw_circle(c, r, UIK.ink())
+		draw_circle(c, r - 2.5, UIK.c("red"))
+		var k: float = r * 0.45
+		draw_line(c + Vector2(-k, -k), c + Vector2(k, k), UIK.c("cream"), 3.0, true)
+		draw_line(c + Vector2(k, -k), c + Vector2(-k, k), UIK.c("cream"), 3.0, true)
+	else:
+		var heat: float = float(hot.get(id, 0.0))
+		if heat > 0.7:
+			draw_circle(c, r, UIK.ink())
+			draw_circle(c, r - 2.5, UIK.c("orange") if heat < 0.9 else UIK.c("red"))
+		elif float(st.get("hp", 100.0)) < 100.0:
+			var w: float = rr.size.x * 0.7
+			draw_rect(Rect2(c.x - w / 2.0, c.y + r * 0.6, w, 6.0), Color(UIK.ink(), 0.3))
+			draw_rect(Rect2(c.x - w / 2.0, c.y + r * 0.6, w * float(st.get("hp", 100.0)) / 100.0, 6.0), UIK.c("mustard"))
+
 func _draw() -> void:
 	var fr: Rect2 = _frame()
 	draw_texture_rect(_tex, fr, false)
@@ -111,7 +137,9 @@ func _draw() -> void:
 		if f.get_string_size(lbl, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x < rr.size.x - 10.0:
 			draw_string(f, rr.position + Vector2(6, fs + 3), lbl, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(UIK.ink(), 0.8))
 		var c: Vector2 = rr.get_center() + Vector2(0, fs * 0.4)
-		if state == "fire":
+		if rr.size.x < 90.0:
+			_compact(rr, state, st, id)
+		elif state == "fire":
 			draw_rect(rr.grow(-3.0), Color(UIK.c("red"), 0.25 + 0.15 * sin(t * 8.0)))
 			var fsz: float = minf(rr.size.x, rr.size.y) * (0.72 + 0.06 * sin(t * 11.0 + rr.position.x))
 			draw_texture_rect(_flame, Rect2(c - Vector2(fsz * 0.42, fsz * 0.55), Vector2(fsz * 0.84, fsz)), false)
@@ -130,7 +158,7 @@ func _draw() -> void:
 		if id == pudding_room:
 			var ps: float = minf(rr.size.x, rr.size.y) * 0.62
 			var bob: float = sin(t * 6.0) * 4.0
-			draw_texture_rect(_pud, Rect2(rr.end - Vector2(ps * 1.05, ps * 0.95 - bob), Vector2(ps, ps * 0.89)), false)
+			draw_texture_rect(_pud, Rect2(Vector2(rr.end.x - ps * 1.02, rr.position.y + ps * 0.08 + bob), Vector2(ps, ps * 0.89)), false)
 		if id == selected:
 			draw_rect(rr.grow(2.0), UIK.c("yellow"), false, 5.0)
 			if repairing or prog > 0.0:

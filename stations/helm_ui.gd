@@ -60,8 +60,7 @@ func refresh(v: Dictionary, _com: Dictionary) -> void:
 	roll_box.get_parent().get_parent().visible = feat("roll")
 	var cd: float = float(v.get("roll_cd", 0.0))
 	roll_btn.set_disabled(cd > 0.0)
-	roll_btn.label = "ROLL!" if cd <= 0.0 else "%.0fs" % ceil(cd)
-	roll_btn.queue_redraw()
+	roll_btn.set_label("ROLL!" if cd <= 0.0 else "%.0fs" % ceil(cd))
 
 func on_key(k: Key, down: bool) -> bool:
 	match k:

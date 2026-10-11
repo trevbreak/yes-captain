@@ -17,7 +17,7 @@ func _init() -> void:
 
 func build() -> void:
 	lever = ThrottleLever.new()
-	lever.custom_minimum_size = Vector2(250, 420)
+	lever.custom_minimum_size = Vector2(290, 420)
 	lever.changed.connect(func(v: float): send("throttle", v))
 	hero.add_child(lever)
 	var col: VBoxContainer = UIK.vbox(8)

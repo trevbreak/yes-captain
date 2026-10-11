@@ -38,6 +38,7 @@ func _ready() -> void:
 	cw[0].custom_minimum_size = Vector2(380, 0)
 	main.add_child(cw[0])
 	var sc: ScrollContainer = ScrollContainer.new()
+	sc.set_meta("scroll_ok", true)
 	sc.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	(cw[1] as VBoxContainer).add_child(sc)

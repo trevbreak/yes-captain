@@ -51,6 +51,9 @@ func _parse_args() -> void:
 	if args.has("autotest") or args.has("layoutcheck") or args.has("tour"):
 		Progress.persist = false
 		Progress.unlock_all()
+	if args.has("shots"):
+		# macOS stops redrawing covered windows, which freezes screenshots: keep the test window on top
+		get_window().always_on_top = true
 	if args.has("nograin"):
 		UIK.set_grain(false)
 	if args.has("server"):
@@ -152,7 +155,7 @@ func _check(name: String) -> void:
 	var issues: Array = LayoutCheck.check(root_ui)
 	for i in issues:
 		layout_issues.append("[%s] %s" % [name, i])
-	print("LAYOUT %-26s %s  %s" % [name, "ok" if issues.is_empty() else "%d issue(s)" % issues.size(), root_ui.get_viewport_rect().size])
+	print("LAYOUT %-26s %s  phase=%s state=%s" % [name, "ok" if issues.is_empty() else "%d issue(s)" % issues.size(), Net.host.phase if Net.host else "-", state])
 	for i2 in issues:
 		print("    ", i2)
 	await _shot(name)
@@ -201,6 +204,29 @@ func _layoutcheck() -> void:
 		Net.send("active", {"seat": seat})
 		await _wait(0.7)
 		await _check("seat_" + seat)
+	# now make everything go wrong at once: long texts, stamps, warnings, alerts
+	var w: World = Net.host.world
+	w.break_system("gun", "test", true)
+	w.break_system("engine_p", "test", false)
+	w.break_system("sensors", "test", false)
+	w.break_system("bridge", "test", true)
+	w.ship.pud_mood = 0.0
+	w.ship.engine_heat = 95.0
+	w.ship.gun_heat = 90.0
+	w.ship.overload = 80.0
+	w.ship.torp = "ready"
+	w.send_hail("Customs Officer", "Turn your ship to face heading 090. East, for the meat-brained. And do it quickly, please.")
+	w.hail.heard = true
+	w.spawn("grabber", w.ship.pos + Vector2(30, 0), {"ai": "grabber"})
+	w.spawn("patrol", w.ship.pos + Vector2(0, 300), {"ai": "patrol", "charge": 1.0})
+	Net.host.autopilot = false
+	Net.host._sync_bots()
+	for seat2 in K.SEATS:
+		Net.send("active", {"seat": seat2})
+		await _wait(0.6)
+		await _check("stress_" + seat2)
+	Net.host.autopilot = true
+	Net.host._sync_bots()
 	game.pause_panel.visible = true
 	await _check("pause")
 	game.pause_panel.visible = false

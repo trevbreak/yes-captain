@@ -31,10 +31,13 @@ func set_value(v: float, emit: bool = false) -> void:
 	if emit:
 		changed.emit(value)
 
+const LABEL_W: float = 72.0   # room to the right of the plate for STOP / HALF / FULL
+
 func _plate_rect() -> Rect2:
-	var ph: float = size.y
+	## the plate keeps its shape and leaves room for its labels inside our own rect
+	var ph: float = minf(size.y, (size.x - 24.0 - LABEL_W) * 440.0 / 200.0)
 	var pw: float = ph * 200.0 / 440.0
-	return Rect2(Vector2(20.0, 0.0), Vector2(pw, ph))
+	return Rect2(Vector2(24.0, (size.y - ph) / 2.0), Vector2(pw, ph))
 
 func _slot() -> Vector2:
 	## y of FULL and STOP in local coordinates
@@ -75,6 +78,6 @@ func _draw() -> void:
 		var y: float = _y_for(float(m[0]))
 		draw_string(f, Vector2(pr.end.x + 8, y + 8), str(m[1]), HORIZONTAL_ALIGNMENT_LEFT, -1, 20, UIK.ink())
 	var hy: float = _y_for(value)
-	var hw: float = pr.size.x * 1.15
+	var hw: float = pr.size.x * 1.12
 	var hh: float = hw * 90.0 / 220.0
 	draw_texture_rect(_handle, Rect2(Vector2(cx - hw / 2.0, hy - hh / 2.0), Vector2(hw, hh)), false)
