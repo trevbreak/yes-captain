@@ -1,0 +1,29 @@
+; Engine configuration file.
+config_version=5
+
+[application]
+
+config/name="Yes, Captain"
+config/description="A LAN-party bridge simulator. The captain can see but not touch. Everyone else can touch but not see."
+run/main_scene="res://scenes/main.tscn"
+config/features=PackedStringArray("4.7", "GL Compatibility")
+boot_splash/bg_color=Color(0.169, 0.137, 0.314, 1)
+
+[autoload]
+
+Net="*res://net/net.gd"
+Sfx="*res://content/sfx.gd"
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+anti_aliasing/quality/msaa_3d=2
+environment/defaults/default_clear_color=Color(0.169, 0.137, 0.314, 1)
