@@ -154,3 +154,29 @@ This view is shown on a TV to the whole room, so it's designed as a stage set.
 - Sharp, aggressive silhouettes, including for the enemy (they're gaudy and pompous, not daggers).
 - Any lookalike of the IP we're drawing inspiration from (see STORY.md §7).
 - Tiny text, low contrast, or colour-only information.
+
+---
+
+## 9. The implemented design system (v2)
+
+What the game actually ships with (`ui/uik.gd`; run the main scene with `-- --styleguide` to see every component).
+
+* **Type:** Fredoka SemiBold for headings and titles, Nunito Bold/Black for body and numbers. Both are bundled
+  (SIL OFL) in `assets/fonts/`.
+* **Palette v2** (`K.PAL`): card `#FFFAF0`, well `#EFE8D9`, ink `#263150`, night `#1B1840`. Every role has its own
+  colour, used for its window headers, persona card, dock button and portrait background: helm `#2FAFD2`,
+  engines `#F5883A`, power `#F2BE33`, weapons `#EC5A5A`, sensors `#3FC197`, ops `#9A84E0`, damage control `#E0A83A`.
+* **Windows:** cream cards (radius 18) with a coloured header ribbon (icon plus title), a darker bottom border and a
+  soft drop shadow. Borders are tinted, never black. Stations put their windows on a darker "well" panel.
+* **Buttons:** chunky pills with a 6px darker "lip". Pressing pushes them down 4px. Text is ink on light colours and
+  white on dark ones. Neutral toggles light up yellow when on. Dangerous controls sit under a hazard-striped
+  safety cover.
+* **Crew personas:** generated SVG portraits (`tools/make_art.py`) in a Two Point style: tall rounded heads, big
+  noses, big eyes and a role accessory (captain's hat, headset, goggles, bandana, antenna, cardigan, hard hat).
+  They appear in the Crew Room, the briefing, the top bar, the captain's bridge cam and the awards.
+* **3D:** rounded "superellipsoid" boxes instead of cubes, a soft wrap-lit toon shader with a gentle rim, thin
+  outlines tinted from each object's own colour, soft billboard nebulae, and our own ship's orange nose and green
+  cab in the bottom of the captain's window.
+* **Layout rules:** the logical canvas is at least 1280x720 (stretch mode canvas_items, aspect expand). Everything is
+  built from containers, nothing is absolutely positioned except overlays, and `--layoutcheck` must report 0 issues
+  at 1280x720, 1440x900 and 1920x1080.

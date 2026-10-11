@@ -1,6 +1,6 @@
 class_name Dial
 extends Control
-## Wobbly analog dial with an optional green band and a title.
+## Arc meter: a soft track, a coloured fill, an optional green target band and a big number.
 
 var value: float = 0.0
 var shown: float = 0.0
@@ -13,10 +13,10 @@ var unit: String = ""
 var accent: Color = Color.WHITE
 var decimals: int = 0
 var danger_above: float = 1e9
-var wobble: float = 0.0
+var t: float = 0.0
 
-func _init(t: String = "", lo: float = 0.0, hi: float = 1.0, color: Color = Color.WHITE) -> void:
-	title = t
+func _init(tt: String = "", lo: float = 0.0, hi: float = 1.0, color: Color = Color.WHITE) -> void:
+	title = tt
 	vmin = lo
 	vmax = hi
 	accent = color
@@ -26,46 +26,43 @@ func _init(t: String = "", lo: float = 0.0, hi: float = 1.0, color: Color = Colo
 func set_value(v: float) -> void:
 	value = v
 
-func _process(delta: float) -> void:
-	shown = lerpf(shown, value, 1.0 - exp(-10.0 * delta))
-	wobble += delta
-	queue_redraw()
-
 func _ready() -> void:
 	set_process(true)
+
+func _process(delta: float) -> void:
+	shown = lerpf(shown, value, 1.0 - exp(-10.0 * delta))
+	t += delta
+	queue_redraw()
 
 func _frac(v: float) -> float:
 	return clampf((v - vmin) / maxf(0.0001, vmax - vmin), 0.0, 1.0)
 
 func _draw() -> void:
 	var sz: Vector2 = size
-	var c: Vector2 = Vector2(sz.x * 0.5, sz.y * 0.5 - 6.0)
-	var r: float = minf(sz.x, sz.y - 18.0) * 0.5 - 4.0
-	draw_circle(c, r + 3.0, K.pal("ink"))
-	draw_circle(c, r, K.pal("cream"))
-	var a0: float = deg_to_rad(135.0)
-	var a1: float = deg_to_rad(405.0)
-	# band
+	var r: float = minf(sz.x, sz.y - 22.0) * 0.5 - 6.0
+	var c: Vector2 = Vector2(sz.x * 0.5, r + 6.0)
+	var a0: float = deg_to_rad(140.0)
+	var a1: float = deg_to_rad(400.0)
+	var w: float = maxf(10.0, r * 0.2)
+	# soft face
+	draw_circle(c + Vector2(0, 3), r + 2.0, Color(0.06, 0.03, 0.18, 0.18))
+	draw_circle(c, r + 2.0, K.pal("card"))
+	draw_arc(c, r - w * 0.5, a0, a1, 48, K.pal("well"), w, true)
 	if band_lo >= 0.0:
-		var b0: float = lerpf(a0, a1, _frac(band_lo))
-		var b1: float = lerpf(a0, a1, _frac(band_hi))
-		draw_arc(c, r - 7.0, b0, b1, 24, K.pal("green"), 8.0, true)
+		draw_arc(c, r - w * 0.5, lerpf(a0, a1, _frac(band_lo)), lerpf(a0, a1, _frac(band_hi)), 24, Color(K.pal("green"), 0.45), w, true)
 	if danger_above < vmax:
-		var d0: float = lerpf(a0, a1, _frac(danger_above))
-		draw_arc(c, r - 7.0, d0, a1, 24, K.pal("coral"), 8.0, true)
-	# ticks
-	for i in 11:
-		var a: float = lerpf(a0, a1, float(i) / 10.0)
-		var p0: Vector2 = c + Vector2.from_angle(a) * (r - 3.0)
-		var p1: Vector2 = c + Vector2.from_angle(a) * (r - (13.0 if i % 5 == 0 else 8.0))
-		draw_line(p0, p1, K.pal("ink"), 2.0)
-	# needle
+		draw_arc(c, r - w * 0.5, lerpf(a0, a1, _frac(danger_above)), a1, 24, Color(K.pal("red"), 0.3), w, true)
 	var f: float = _frac(shown)
-	var na: float = lerpf(a0, a1, f) + sin(wobble * 18.0) * 0.012
-	draw_line(c, c + Vector2.from_angle(na) * (r - 10.0), accent.darkened(0.3), 5.0, true)
-	draw_circle(c, 7.0, K.pal("ink"))
-	draw_circle(c, 3.5, accent)
-	var font: Font = get_theme_default_font()
+	var col: Color = accent
+	if shown >= danger_above:
+		col = K.pal("red").lerp(accent, 0.5 + 0.5 * sin(t * 10.0))
+	if f > 0.002:
+		draw_arc(c, r - w * 0.5, a0, lerpf(a0, a1, f), 48, col, w, true)
+	var tip: Vector2 = c + Vector2.from_angle(lerpf(a0, a1, f)) * (r - w * 0.5)
+	draw_circle(tip, w * 0.62, Color.WHITE)
+	draw_circle(tip, w * 0.42, col.darkened(0.15))
+	var font: Font = UIK.font_head()
 	var txt: String = ("%." + str(decimals) + "f%s") % [value, unit]
-	draw_string(font, Vector2(0, c.y + r * 0.62), txt, HORIZONTAL_ALIGNMENT_CENTER, sz.x, 17, K.pal("ink"))
-	draw_string(font, Vector2(0, sz.y - 3.0), title, HORIZONTAL_ALIGNMENT_CENTER, sz.x, 14, Color(K.pal("ink"), 0.8))
+	var fs: int = int(clampf(r * 0.42, 14.0, 34.0))
+	draw_string(font, Vector2(0, c.y + fs * 0.35), txt, HORIZONTAL_ALIGNMENT_CENTER, sz.x, fs, K.pal("ink"))
+	draw_string(UIK.font_bold(), Vector2(0, sz.y - 4.0), title.to_upper(), HORIZONTAL_ALIGNMENT_CENTER, sz.x, 13, K.pal("ink_soft"))

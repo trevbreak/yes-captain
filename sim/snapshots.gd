@@ -27,7 +27,7 @@ static func common(w: World) -> Dictionary:
 	return {"t": w.t, "hull": s.hull, "hull_max": s.hull_max, "temper": w.temper, "scram": s.scram_t > 0.0,
 		"obj": enc.objective_text if enc != null else "", "title": enc.title if enc != null else "",
 		"mood": s.pud["mood"], "loose": s.pud["loose"], "shake": s.shake, "speed": s.speed(), "mods": w.mods,
-		"enc_prog": enc.prog if enc != null else 0.0}
+		"enc_prog": enc.prog if enc != null else 0.0, "steps": enc.steps() if enc != null else []}
 
 static func helm(w: World) -> Dictionary:
 	var s: Ship = w.ship

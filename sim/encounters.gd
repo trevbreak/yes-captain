@@ -104,6 +104,12 @@ class BinDay extends Encounter:
 				w.emit("pudding_found", {})
 				w.hail("Admiral Thrupp", "Attention, garbage vessel. You have collected a... parcel. Please return it. Gently. I will be demoted.")
 
+	func steps() -> Array:
+		return [st("Fly to a skip (the captain can see them)", collected > 0),
+			st("Slow down within 80m so Ops can tractor it", collected > 0),
+			st("Collect the plain skips (%d/3)" % mini(collected, 3), collected >= 3),
+			st("Collect the warm one last", special_done_t > 0.0)]
+
 	func hint() -> Dictionary:
 		var best: Dictionary = {}
 		var bd: float = 1e9
@@ -183,6 +189,11 @@ class FlyCasual extends Encounter:
 		if at_goal():
 			finish(true)
 
+	func steps() -> Array:
+		return [st("Stay under 24 m/s near patrols", not spotted),
+			st("No pings, no boosting, no shooting", not spotted),
+			st("Reach the green ring", done and success)]
+
 	func captain_data() -> Dictionary:
 		return {"meters": [{"label": "SUSPICION", "v": suspicion, "max": 100.0, "color": "coral"}]}
 
@@ -231,6 +242,11 @@ class Minefield extends Encounter:
 		prog = clampf(1.0 - w.ship.pos.distance_to(goal) / 850.0, 0.0, 1.0)
 		if at_goal():
 			finish(true)
+
+	func steps() -> Array:
+		return [st("Sensors calls out the mines", t > 10.0),
+			st("Creep through the field (slowly!)", w.ship.pos.distance_to(goal) < 300.0),
+			st("Reach the green ring", done and success)]
 
 	func hint() -> Dictionary:
 		var avoid: Array = []
@@ -313,6 +329,13 @@ class Checkpoint extends Encounter:
 					finish(true)
 				elif t - after_t > 70.0:
 					finish(true)
+
+	func steps() -> Array:
+		return [st("Captain reads the approved vessel sheet", t > 15.0 or inspect > 0.0),
+			st("Every station fills in its customs form", _count() >= 5),
+			st("Weapons stows the guns", w.stowed),
+			st("Park near the checkpoint and sit still", inspect > 0.05),
+			st("Pass the inspection", result == "pass")]
 
 	func on_intent(st: String, key: String, v: Variant) -> bool:
 		if key == "set" and result == "":
@@ -401,6 +424,11 @@ class OddJob extends Encounter:
 			s.cargo.clear()
 			finish(true)
 
+	func steps() -> Array:
+		return [st("Fly gently (the captain watches the cargo)", float(item.get("integrity", 100.0)) > 50.0),
+			st("Reach the green ring", w.ship.pos.distance_to(goal) < 32.0 + w.ship.radius),
+			st("Slow below 6 m/s to deliver", done and success)]
+
 	func on_event(type: String, data: Dictionary) -> void:
 		if variant == "bees" and (type == "hull_hit" or type == "collision"):
 			item["integrity"] = maxf(0.0, float(item["integrity"]) - (float(data.get("amount", 5.0)) * 1.2 if type == "hull_hit" else 6.0))
@@ -446,6 +474,12 @@ class DroneAmbush extends Encounter:
 		if spawned >= total and alive == 0:
 			finish(true)
 
+	func steps() -> Array:
+		var alive: int = w.of_kind("grabber").size()
+		return [st("Sensors scans the drones", t > 12.0),
+			st("Weapons shoots them (%d to go)" % (alive + total - spawned), spawned >= total and alive == 0),
+			st("Spin hard to shake off any that latch on", spawned >= total and alive == 0)]
+
 	func hint() -> Dictionary:
 		var tgts: Array = []
 		for g in w.of_kind("grabber"):
@@ -475,6 +509,11 @@ class SnatchPods extends Encounter:
 		prog = float(total - alive - (total - spawned)) / float(total)
 		if spawned >= total and alive == 0:
 			finish(true)
+
+	func steps() -> Array:
+		var alive: int = w.of_kind("snatch").size()
+		return [st("Scan the snatch pods", t > 12.0),
+			st("Destroy them before they grab Pudding (%d to go)" % (alive + total - spawned), spawned >= total and alive == 0)]
 
 	func on_event(type: String, _data: Dictionary) -> void:
 		if type == "pudding_snatched":
@@ -517,6 +556,11 @@ class BastionFight extends Encounter:
 		if at_goal(30.0):
 			finish(true)
 
+	func steps() -> Array:
+		return [st("Sensors watches for the CHARGING arc", t > 10.0),
+			st("Ops angles the shields at the Bastion", t > 15.0),
+			st("Run for the green ring, or torpedo its rear vent", done and success)]
+
 	func hint() -> Dictionary:
 		var b: Dictionary = w.find(bid)
 		var tg: Array = [] if b.is_empty() else [b.id]
@@ -546,6 +590,12 @@ class SayCheese extends Encounter:
 		objective_text = "Hold still, keep Pudding calm: %d%%" % int(prog * 100.0)
 		if prog >= 1.0:
 			finish(true)
+
+	func steps() -> Array:
+		var s: Ship = w.ship
+		return [st("Stop the ship completely", s.speed() < 2.5 and absf(s.angvel) < 0.15),
+			st("Calm Pudding below 35", float(s.pud["mood"]) < 35.0),
+			st("Hold still for the photo (%d%%)" % int(prog * 100.0), prog >= 1.0)]
 
 	func captain_data() -> Dictionary:
 		return {"meters": [{"label": "PHOTO", "v": prog * 100.0, "max": 100.0, "color": "pink"}]}
@@ -591,6 +641,13 @@ class DockDiner extends Encounter:
 				finish(true)
 		else:
 			hold_t = maxf(0.0, hold_t - dt)
+
+	func steps() -> Array:
+		var d: Dictionary = w.find(did)
+		var close: bool = not d.is_empty() and w.ship.pos.distance_to(port_pos(d)) < 60.0
+		return [st("Fly to the diner", close),
+			st("Match the ring's spin at the dock light", hold_t > 0.0),
+			st("Face the diner and hold for 2 seconds", done and success)]
 
 	func station_data(st: String) -> Dictionary:
 		var d: Dictionary = w.find(did)
@@ -638,6 +695,11 @@ class FinaleRun extends Encounter:
 		if at_goal(40.0):
 			finish(true)
 
+	func steps() -> Array:
+		return [st("Run for the green ring (%dm)" % int(w.ship.pos.distance_to(goal)), done and success),
+			st("Keep the shields toward the flagship", false),
+			st("Don't stop", done and success)]
+
 	func hint() -> Dictionary:
 		return goal_hint(46.0, {"arrive": 30.0, "combat": true, "shield_face": true, "fire": []})
 
@@ -683,6 +745,13 @@ class FinaleReturn extends Encounter:
 				finish(true)
 		else:
 			hold_t = maxf(0.0, hold_t - dt)
+
+	func steps() -> Array:
+		var m: Dictionary = w.find(mag_id)
+		var close: bool = not m.is_empty() and w.ship.pos.distance_to(port_pos(m)) < 360.0
+		return [st("Fly to the Magnificence", close),
+			st("Match its spin at the bay", hold_t > 0.0),
+			st("Dock and hold for 2.5 seconds", done and success)]
 
 	func station_data(_st: String) -> Dictionary:
 		var m: Dictionary = w.find(mag_id)

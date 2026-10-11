@@ -33,7 +33,7 @@ func _init() -> void:
 				h.world.director.cooldown = 3.0
 			var limit: float = 420.0
 			var t0: int = Time.get_ticks_msec()
-			while h.world.t < limit and h.phase == "encounter":
+			while h.world.t < limit and (h.phase == "encounter" or h.phase == "briefing"):
 				h.sim_step(K.DT)
 			var enc: Encounter = h.world.enc
 			var res: String = "TIMEOUT"

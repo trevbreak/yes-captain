@@ -1,7 +1,8 @@
 class_name PowerUI
 extends StationUI
 
-const SYS_LABELS: Dictionary = {"engines": "ENGINES", "rcs": "HELM / RCS", "weapons": "WEAPONS", "shields": "SHIELDS", "sensors": "SENSORS", "ops": "OPS / JUMP"}
+const SYS_LABELS: Dictionary = {"engines": "Engines", "rcs": "Helm jets", "weapons": "Weapons", "shields": "Shields", "sensors": "Sensors", "ops": "Ops / jump"}
+const JARGON: Dictionary = {"engines": "Big Fans", "rcs": "Wiggle Jets", "weapons": "Pew Pews", "shields": "The Bubble", "sensors": "Eyeballs", "ops": "Doohickeys"}
 
 var rows: Dictionary = {}
 var reset_btns: Dictionary = {}
@@ -20,105 +21,110 @@ var warn_lbl: Label
 var scram_lbl: Label
 
 func build() -> void:
-	var h: HBoxContainer = UIK.hbox(14)
-	h.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	body.add_child(h)
-	var left: VBoxContainer = UIK.vbox(6)
-	left.custom_minimum_size = Vector2(400, 0)
-	h.add_child(left)
-	var hint: Label = UIK.label("POWER PIPS: click a pip. 2 = normal. Over 4 trips the breaker!", 15)
-	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	left.add_child(hint)
+	var h: HBoxContainer = UIK.hbox(12)
+	add_body(h)
+	var pw: Array = UIK.window("POWER PIPS", "power", "power", 10)
+	(pw[0] as Control).custom_minimum_size = Vector2(390, 0)
+	h.add_child(pw[0])
+	var pv: VBoxContainer = pw[1]
+	pv.add_child(UIK.wrapped(UIK.label("Click pips to share out power. 2 is normal. Over 4 trips the breaker!", 14, K.pal("ink_soft"))))
 	for sys in K.SYSTEMS:
-		var r: HBoxContainer = UIK.hbox(6)
+		var r: HBoxContainer = UIK.hbox(4)
 		var pr: PipRow = PipRow.new(SYS_LABELS[sys], accent, 6)
-		pr.custom_minimum_size = Vector2(320, 36)
+		pr.custom_minimum_size = Vector2(300, 34)
+		pr.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		var s_name: String = sys
 		pr.changed.connect(func(n: int): send("alloc", {"sys": s_name, "n": n}))
 		r.add_child(pr)
-		var rb: Button = UIK.btn("RESET", "coral", func(): send("reset_breaker", s_name))
+		var rb: Button = UIK.btn("Reset", "red", func(): send("reset_breaker", s_name))
+		rb.add_theme_font_size_override("font_size", 14)
 		rb.visible = false
 		rb.disabled = readonly
 		r.add_child(rb)
-		left.add_child(r)
+		pv.add_child(r)
 		rows[sys] = pr
 		reset_btns[sys] = rb
-	avail_bar = BarGauge.new("", 12.0, K.pal("butter"))
-	avail_bar.danger_above = 12.5
-	avail_bar.custom_minimum_size = Vector2(300, 30)
-	left.add_child(avail_bar)
-	warn_lbl = UIK.label("", 16, K.pal("coral"))
-	left.add_child(warn_lbl)
+	avail_bar = BarGauge.new("", 14.0, accent)
+	avail_bar.custom_minimum_size = Vector2(0, 26)
+	pv.add_child(avail_bar)
+	warn_lbl = UIK.heading("", 15, K.pal("red"))
+	pv.add_child(warn_lbl)
 	var oc: HBoxContainer = UIK.hbox(8)
-	left.add_child(oc)
+	pv.add_child(oc)
 	oc_opt = OptionButton.new()
+	oc_opt.fit_to_longest_item = false
+	oc_opt.custom_minimum_size = Vector2(130, 0)
 	for sys2 in K.SYSTEMS:
 		oc_opt.add_item(SYS_LABELS[sys2])
 	oc.add_child(oc_opt)
-	oc_btn = SafetyBtn.new("OVERCLOCK", "coral")
+	oc_btn = SafetyBtn.new("OVERCLOCK", "red")
+	oc_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	oc_btn.fired.connect(func(): send("oc", K.SYSTEMS[oc_opt.selected]))
 	oc.add_child(oc_btn)
-	# reactor
-	var mid: VBoxContainer = UIK.vbox(6)
-	h.add_child(mid)
-	heat_dial = Dial.new("REACTOR HEAT", 0.0, 100.0, K.pal("coral"))
+	var rw: Array = UIK.window("REACTOR", "red", "fire", 10)
+	(rw[0] as Control).custom_minimum_size = Vector2(220, 0)
+	h.add_child(rw[0])
+	var rv: VBoxContainer = rw[1]
+	heat_dial = Dial.new("reactor heat", 0.0, 100.0, K.pal("red"))
 	heat_dial.danger_above = 85.0
-	heat_dial.custom_minimum_size = Vector2(200, 180)
-	mid.custom_minimum_size = Vector2(210, 0)
-	mid.add_child(heat_dial)
-	cool_bar = BarGauge.new("COOLANT", 100.0, K.pal("teal"))
+	heat_dial.custom_minimum_size = Vector2(190, 170)
+	rv.add_child(heat_dial)
+	cool_bar = BarGauge.new("coolant", 100.0, K.pal("blue"))
 	cool_bar.band_lo = 40.0
 	cool_bar.band_hi = 100.0
-	mid.add_child(cool_bar)
-	pump_btn = UIK.hold_btn("HOLD: PUMP COOLANT", "teal", func(on: bool): send("pump", on))
+	rv.add_child(cool_bar)
+	pump_btn = UIK.hold_btn("Hold: pump", "blue", func(on: bool): send("pump", on), "fuel")
 	pump_btn.disabled = readonly
-	mid.add_child(pump_btn)
-	vent_btn = UIK.btn("VENT HEAT", "mustard", func(): send("vent", true))
+	rv.add_child(pump_btn)
+	vent_btn = UIK.btn("Vent heat", "orange", func(): send("vent", true), "fire")
 	vent_btn.disabled = readonly
-	mid.add_child(vent_btn)
-	scram_lbl = UIK.label("", 18, K.pal("coral"))
-	mid.add_child(scram_lbl)
-	# conduits + capacitor
-	var right: VBoxContainer = UIK.vbox(6)
+	rv.add_child(vent_btn)
+	scram_lbl = UIK.wrapped(UIK.heading("", 15, K.pal("red")))
+	rv.add_child(scram_lbl)
+	var right: VBoxContainer = UIK.vbox(12)
 	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	h.add_child(right)
-	right.add_child(UIK.label("CONDUITS (isolate before splicing!)", 15))
+	var cw: Array = UIK.window("CONDUITS", "purple", "dc", 10)
+	right.add_child(cw[0])
+	(cw[1] as VBoxContainer).add_child(UIK.wrapped(UIK.label("Isolate a cut conduit BEFORE anyone splices it, or they get zapped.", 13, K.pal("ink_soft"))))
 	for c in K.CONDUITS:
 		var cr: HBoxContainer = UIK.hbox(6)
 		var cl: Label = UIK.label(c, 15)
-		cl.custom_minimum_size = Vector2(100, 0)
+		cl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		cr.add_child(cl)
 		var cname: String = c
-		var tb: Button = UIK.toggle_btn("ISOLATE", "mustard", func(on: bool): send("isolate", {"cid": cname, "on": on}))
+		var tb: Button = UIK.toggle_btn("Isolate", "orange", func(on: bool): send("isolate", {"cid": cname, "on": on}))
+		tb.add_theme_font_size_override("font_size", 14)
 		tb.disabled = readonly
 		cr.add_child(tb)
-		right.add_child(cr)
+		(cw[1] as VBoxContainer).add_child(cr)
 		con_labels[c] = cl
 		iso_btns[c] = tb
-	right.add_child(UIK.label("JUMP CAPACITOR", 15))
-	var cap: HBoxContainer = UIK.hbox(8)
-	right.add_child(cap)
-	charge_bar = BarGauge.new("", 1.0, K.pal("butter"), true)
-	charge_bar.custom_minimum_size = Vector2(46, 150)
+	var jw: Array = UIK.window("JUMP CAPACITOR", "yellow", "star", 10)
+	right.add_child(jw[0])
+	var cap: HBoxContainer = UIK.hbox(10)
+	(jw[1] as VBoxContainer).add_child(cap)
+	charge_bar = BarGauge.new("", 1.0, accent, true)
+	charge_bar.custom_minimum_size = Vector2(40, 120)
 	charge_bar.band_lo = 0.45
 	charge_bar.band_hi = 0.62
 	charge_bar.danger_above = 0.85
 	cap.add_child(charge_bar)
-	charge_btn = UIK.hold_btn("HOLD:\nCHARGE", "butter", func(on: bool): send("charge", on))
+	var cv: VBoxContainer = UIK.vbox(6)
+	cv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	cap.add_child(cv)
+	cv.add_child(UIK.wrapped(UIK.label("Before a jump: charge it into the green band and hold it there.", 13, K.pal("ink_soft"))))
+	charge_btn = UIK.hold_btn("Hold: charge", "yellow", func(on: bool): send("charge", on), "power")
 	charge_btn.disabled = readonly
-	charge_btn.custom_minimum_size = Vector2(110, 80)
-	cap.add_child(charge_btn)
-
-const JARGON: Dictionary = {"engines": "BIG FANS", "rcs": "WIGGLE JETS", "weapons": "PEW PEWS", "shields": "THE BUBBLE", "sensors": "EYEBALLS", "ops": "DOOHICKEYS"}
+	cv.add_child(charge_btn)
 
 func refresh() -> void:
 	var jargon: bool = "jargon" in full.get("common", {}).get("mods", [])
-	for sysn in K.SYSTEMS:
-		rows[sysn].title = JARGON[sysn] if jargon else SYS_LABELS[sysn]
 	var alloc: Dictionary = view.get("alloc", {})
 	var trip: Dictionary = view.get("tripped", {})
 	for sys in K.SYSTEMS:
 		var pr: PipRow = rows[sys]
+		pr.title = JARGON[sys] if jargon else SYS_LABELS[sys]
 		pr.set_value(int(alloc.get(sys, 0)))
 		pr.tripped = bool(trip.get(sys, false))
 		pr.boosted = str(view.get("oc_sys", "")) == sys
@@ -126,26 +132,25 @@ func refresh() -> void:
 	var used: float = float(view.get("used", 0.0))
 	var avail: float = float(view.get("avail", 12.0))
 	avail_bar.value = used
-	avail_bar.vmax = 14.0
 	avail_bar.band_lo = 0.0
 	avail_bar.band_hi = avail
-	avail_bar.text = "USING %d of %d available pips" % [int(used), int(avail)]
-	warn_lbl.text = "BROWNOUT! Everything runs at %d%%." % int(100.0 * float(view.get("brown", 1.0))) if float(view.get("brown", 1.0)) < 0.99 else ""
+	avail_bar.text = "using %d of %d pips" % [int(used), int(avail)]
+	warn_lbl.text = "BROWNOUT! Everything at %d%%" % int(100.0 * float(view.get("brown", 1.0))) if float(view.get("brown", 1.0)) < 0.99 else ""
 	heat_dial.value = float(view.get("heat", 0.0))
 	cool_bar.value = float(view.get("cool_p", 0.0))
-	cool_bar.text = "COOLANT PRESSURE%s" % ("  (LEAK!)" if bool(view.get("leak", false)) else "")
+	cool_bar.text = "coolant%s" % (" LEAK!" if bool(view.get("leak", false)) else "")
 	vent_btn.disabled = float(view.get("vent_cd", 0.0)) > 0.0 or readonly
 	var st: float = float(view.get("scram_t", 0.0))
 	if st > 0.0:
 		scram_lbl.text = "REACTOR SCRAM! %.0fs" % st
 	elif str(view.get("oc_sys", "")) != "":
-		scram_lbl.text = "OVERCLOCKING %s (%.0fs)" % [str(view.oc_sys).to_upper(), float(view.get("oc_t", 0.0))]
+		scram_lbl.text = "Overclocking %s (%.0fs)" % [str(view.oc_sys), float(view.get("oc_t", 0.0))]
 	else:
 		scram_lbl.text = ""
 	var cons: Dictionary = view.get("cons", {})
 	for c in K.CONDUITS:
 		var cd: Dictionary = cons.get(c, {})
-		var txt: String = c
+		var txt: String = c.substr(2)
 		if cd.get("cut", false):
 			txt += "  CUT!"
 		elif cd.get("unknown", false):
@@ -153,6 +158,7 @@ func refresh() -> void:
 		else:
 			txt += "  ok"
 		con_labels[c].text = txt
+		con_labels[c].add_theme_color_override("font_color", K.pal("red") if cd.get("cut", false) else K.pal("ink"))
 		iso_btns[c].set_pressed_no_signal(bool(cd.get("iso", false)))
 	charge_bar.value = float(view.get("jump_charge", 0.0))
 

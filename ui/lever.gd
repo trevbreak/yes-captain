@@ -1,6 +1,6 @@
 class_name Lever
 extends Control
-## Chunky lever, vertical or horizontal. Range [vmin, vmax]. Emits changed(v) while dragged.
+## A slider with a big round knob, vertical or horizontal. Range [vmin, vmax].
 ## `spring` snaps back to zero on release (yaw, strafe).
 
 signal changed(v: float)
@@ -20,13 +20,13 @@ var marks: Array = []
 var fmt: String = ""
 var step: float = 0.02
 
-func _init(t: String = "", lo: float = -1.0, hi: float = 1.0, color: Color = Color.WHITE, horizontal: bool = false) -> void:
-	title = t
+func _init(tt: String = "", lo: float = -1.0, hi: float = 1.0, color: Color = Color.WHITE, horizontal: bool = false) -> void:
+	title = tt
 	vmin = lo
 	vmax = hi
 	accent = color
 	horiz = horizontal
-	custom_minimum_size = Vector2(240, 80) if horizontal else Vector2(70, 200)
+	custom_minimum_size = Vector2(220, 74) if horizontal else Vector2(76, 200)
 	mouse_default_cursor_shape = Control.CURSOR_HSIZE if horizontal else Control.CURSOR_VSIZE
 
 func set_value(v: float) -> void:
@@ -34,23 +34,21 @@ func set_value(v: float) -> void:
 		value = clampf(v, vmin, vmax)
 		queue_redraw()
 
-func _span() -> float:
-	return size.x if horiz else size.y
+func _pad() -> float:
+	return 28.0
 
 func _pos_of(v: float) -> float:
-	var pad: float = 34.0
 	var f: float = (v - vmin) / maxf(0.0001, vmax - vmin)
 	if horiz:
-		return lerpf(pad, size.x - pad, f)
-	return lerpf(size.y - pad - 18.0, pad, f)
+		return lerpf(_pad(), size.x - _pad(), f)
+	return lerpf(size.y - _pad() - 22.0, _pad() + 4.0, f)
 
 func _v_of(p: float) -> float:
-	var pad: float = 34.0
 	var f: float
 	if horiz:
-		f = clampf((p - pad) / maxf(1.0, size.x - 2.0 * pad), 0.0, 1.0)
+		f = clampf((p - _pad()) / maxf(1.0, size.x - 2.0 * _pad()), 0.0, 1.0)
 	else:
-		f = clampf((size.y - pad - 18.0 - p) / maxf(1.0, size.y - 2.0 * pad - 18.0), 0.0, 1.0)
+		f = clampf((size.y - _pad() - 22.0 - p) / maxf(1.0, size.y - 2.0 * _pad() - 26.0), 0.0, 1.0)
 	return lerpf(vmin, vmax, f)
 
 func _gui_input(ev: InputEvent) -> void:
@@ -78,45 +76,51 @@ func _set_from(p: float) -> void:
 		changed.emit(v)
 		queue_redraw()
 
-func _notification(what: int) -> void:
-	if what == NOTIFICATION_MOUSE_EXIT and dragging and spring:
-		pass
-
 func _draw() -> void:
-	var ink: Color = K.pal("ink")
-	var font: Font = get_theme_default_font()
-	var col: Color = accent if not disabled else Color(0.6, 0.6, 0.6)
+	var col: Color = accent if not disabled else Color(0.7, 0.7, 0.75)
+	var well: Color = K.pal("well")
+	var font: Font = UIK.font_bold()
+	var vt: String = (fmt % value) if fmt != "" else ("%+.2f" % value if vmin < 0.0 else "%.2f" % value)
 	if horiz:
-		var cy: float = size.y * 0.5 - 6.0
+		var cy: float = size.y * 0.42
 		var l: float = _pos_of(vmin)
 		var r: float = _pos_of(vmax)
-		draw_rect(Rect2(l - 6, cy - 8, r - l + 12, 16), ink, true)
-		draw_rect(Rect2(l - 3, cy - 5, r - l + 6, 10), K.pal("cream2"), true)
+		draw_style_box(UIK.sb(well, 8, well.darkened(0.12), 2, 0), Rect2(l - 8, cy - 8, r - l + 16, 16))
+		var zero: float = _pos_of(clampf(0.0, vmin, vmax))
+		var kx: float = _pos_of(value)
+		var fx0: float = minf(zero, kx)
+		var fx1: float = maxf(zero, kx)
+		if fx1 - fx0 > 1.0:
+			draw_style_box(UIK.sb(col, 6, Color(0, 0, 0, 0), 0, 0), Rect2(fx0, cy - 5, fx1 - fx0, 10))
 		for m in marks:
 			var mx: float = _pos_of(float(m))
-			draw_line(Vector2(mx, cy - 18), Vector2(mx, cy + 18), Color(ink, 0.5), 2.0)
+			draw_line(Vector2(mx, cy - 14), Vector2(mx, cy + 14), Color(K.pal("ink"), 0.25), 2.0)
 		if vmin < 0.0 and vmax > 0.0:
-			var zx: float = _pos_of(0.0)
-			draw_line(Vector2(zx, cy - 22), Vector2(zx, cy + 22), ink, 3.0)
-		var kx: float = _pos_of(value)
-		draw_style_box(UIK.box(col, ink, 12, 3, 0), Rect2(kx - 17, cy - 24, 34, 48))
-		draw_line(Vector2(kx, cy - 14), Vector2(kx, cy + 14), ink, 3.0)
-		draw_string(font, Vector2(0, size.y - 4.0), title, HORIZONTAL_ALIGNMENT_CENTER, size.x, 15, ink)
+			draw_line(Vector2(zero, cy - 16), Vector2(zero, cy + 16), Color(K.pal("ink"), 0.45), 3.0)
+		draw_circle(Vector2(kx, cy + 3), 17.0, Color(0.06, 0.03, 0.18, 0.25))
+		draw_circle(Vector2(kx, cy), 17.0, Color.WHITE)
+		draw_circle(Vector2(kx, cy), 12.0, col)
+		draw_circle(Vector2(kx - 3, cy - 4), 4.0, Color(1, 1, 1, 0.45))
+		draw_string(font, Vector2(0, size.y - 3.0), "%s  %s" % [title, vt] if title != "" else vt, HORIZONTAL_ALIGNMENT_CENTER, size.x, 14, K.pal("ink_soft"))
 		return
 	var cx: float = size.x * 0.5
 	var top: float = _pos_of(vmax)
 	var bot: float = _pos_of(vmin)
-	draw_rect(Rect2(cx - 8, top - 6, 16, bot - top + 12), ink, true)
-	draw_rect(Rect2(cx - 5, top - 3, 10, bot - top + 6), K.pal("cream2"), true)
-	for m in marks:
-		var my: float = _pos_of(float(m))
-		draw_line(Vector2(cx - 18, my), Vector2(cx + 18, my), Color(ink, 0.5), 2.0)
-	if vmin < 0.0 and vmax > 0.0:
-		var zy: float = _pos_of(0.0)
-		draw_line(Vector2(cx - 24, zy), Vector2(cx + 24, zy), ink, 3.0)
+	draw_style_box(UIK.sb(well, 9, well.darkened(0.12), 2, 0), Rect2(cx - 9, top - 8, 18, bot - top + 16))
+	var zero2: float = _pos_of(clampf(0.0, vmin, vmax))
 	var ky: float = _pos_of(value)
-	draw_style_box(UIK.box(col, ink, 12, 3, 0), Rect2(cx - 26, ky - 15, 52, 30))
-	draw_line(Vector2(cx - 14, ky), Vector2(cx + 14, ky), ink, 3.0)
-	draw_string(font, Vector2(0, size.y - 2.0), title, HORIZONTAL_ALIGNMENT_CENTER, size.x, 15, ink)
-	var vt: String = (fmt % value) if fmt != "" else ("%+.2f" % value if vmin < 0.0 else "%.2f" % value)
-	draw_string(font, Vector2(0, 16.0), vt, HORIZONTAL_ALIGNMENT_CENTER, size.x, 14, Color(ink, 0.7))
+	var fy0: float = minf(zero2, ky)
+	var fy1: float = maxf(zero2, ky)
+	if fy1 - fy0 > 1.0:
+		draw_style_box(UIK.sb(col, 6, Color(0, 0, 0, 0), 0, 0), Rect2(cx - 6, fy0, 12, fy1 - fy0))
+	for m2 in marks:
+		var my: float = _pos_of(float(m2))
+		draw_line(Vector2(cx - 18, my), Vector2(cx + 18, my), Color(K.pal("ink"), 0.25), 2.0)
+	if vmin < 0.0 and vmax > 0.0:
+		draw_line(Vector2(cx - 22, zero2), Vector2(cx + 22, zero2), Color(K.pal("ink"), 0.45), 3.0)
+	var kr: Rect2 = Rect2(cx - 28, ky - 15, 56, 30)
+	draw_style_box(UIK.sb(Color(0.06, 0.03, 0.18, 0.22), 14, Color(0, 0, 0, 0), 0, 0), Rect2(kr.position + Vector2(0, 3), kr.size))
+	draw_style_box(UIK.sb(Color.WHITE, 14, col, 4, 0), kr)
+	draw_line(Vector2(cx - 12, ky), Vector2(cx + 12, ky), col, 4.0)
+	draw_string(UIK.font_head(), Vector2(0, 15.0), vt, HORIZONTAL_ALIGNMENT_CENTER, size.x, 14, K.pal("ink"))
+	draw_string(font, Vector2(0, size.y - 3.0), title, HORIZONTAL_ALIGNMENT_CENTER, size.x, 14, K.pal("ink_soft"))

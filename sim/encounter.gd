@@ -64,6 +64,22 @@ func station_data(_st: String) -> Dictionary:
 func hint() -> Dictionary:
 	return {"goal": goal, "speed": 0.0}
 
+func steps() -> Array:
+	## The objective as a checklist for the HUD: [{"text": String, "done": bool}]
+	return [{"text": objective_text, "done": done and success}]
+
+func briefing() -> Dictionary:
+	var b: Dictionary = Briefings.get_brief(id)
+	b["title"] = title
+	b["family"] = family
+	b["objective"] = brief
+	b["par"] = par
+	b["steps"] = steps()
+	return b
+
+func st(text: String, ok: bool) -> Dictionary:
+	return {"text": text, "done": ok}
+
 # ---------------------------------------------------------------- helpers
 
 func polar(center: Vector2, ang: float, dist: float) -> Vector2:

@@ -40,6 +40,12 @@ if [ "$MODE" != "quick" ]; then
 fi
 run "UI smoke: every screen"             "$GODOT" --headless --path . scenes/main.tscn -- --solo --autotest=casual --wait=0.3 --tail=1
 run "UI smoke: poke every control"       "$GODOT" --headless --path . scenes/main.tscn -- --solo --autotest=drones --exercise
+# layout QA needs a real window (headless has no viewport size); skip with NOWINDOW=1 on CI
+if [ -z "$NOWINDOW" ]; then
+  for RES in 1280x720 1440x900 1920x1080; do
+    run "layout check: every screen @ $RES"  "$GODOT" --path . --resolution $RES scenes/main.tscn -- --layoutcheck=drones
+  done
+fi
 
 # networking: dedicated headless host + a separate client process
 printf "%-46s " "network: host + remote client"

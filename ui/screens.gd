@@ -14,7 +14,7 @@ class ReplayView extends Control:
 	var speed: float = 2.0
 
 	func _init() -> void:
-		custom_minimum_size = Vector2(440, 230)
+		custom_minimum_size = Vector2(420, 180)
 		clip_contents = true
 
 	func setup(d: Dictionary) -> void:
@@ -107,7 +107,7 @@ class MapPanel extends Control:
 	var sel_id: int = -1
 
 	func _init() -> void:
-		custom_minimum_size = Vector2(700, 215)
+		custom_minimum_size = Vector2(420, 200)
 
 	func setup(m: Dictionary, opts: Array, node: int) -> void:
 		nodes = m.get("nodes", [])
@@ -127,9 +127,9 @@ class MapPanel extends Control:
 		var cols: int = 1
 		for q in nodes:
 			cols = maxi(cols, int(q.col) + 1)
-		var x: float = 50.0 + (size.x - 100.0) * float(n.col) / maxf(1.0, float(cols - 1))
+		var x: float = 30.0 + (size.x - 60.0) * float(n.col) / maxf(1.0, float(cols - 1))
 		var rows: int = 3
-		var y: float = size.y * 0.5 + (float(n.row) - (1.0 if int(n.col) > 0 and int(n.col) < cols - 1 and false else 1.0)) * 80.0
+		var y: float = size.y * 0.5 + (float(n.row) - 1.0) * minf(80.0, size.y * 0.3)
 		if int(n.col) == 0:
 			y = size.y * 0.5
 		return Vector2(x, y)
@@ -137,7 +137,7 @@ class MapPanel extends Control:
 	func _draw() -> void:
 		var font: Font = get_theme_default_font()
 		var ink: Color = K.pal("ink")
-		draw_rect(Rect2(Vector2.ZERO, size), Color(0.1, 0.08, 0.22), true)
+		draw_style_box(UIK.sb(K.pal("night"), 14, Color(0, 0, 0, 0), 0, 0), Rect2(Vector2.ZERO, size))
 		for n in nodes:
 			var p: Vector2 = _pos(n)
 			for nid in n.next:
@@ -160,7 +160,7 @@ class MapPanel extends Control:
 				col = K.pal("teal")
 			elif kind in ["cake", "ducks", "bees"]:
 				col = K.pal("pink")
-			var rr: float = 17.0
+			var rr: float = 14.0
 			if int(n2.id) in visited:
 				col = col.darkened(0.5)
 			draw_circle(p2, rr + 3.0, ink)
@@ -172,8 +172,8 @@ class MapPanel extends Control:
 			if is_cur:
 				draw_string(font, p2 + Vector2(-8, 6), "★", HORIZONTAL_ALIGNMENT_CENTER, 16, 18, K.pal("white"))
 			if is_opt:
-				draw_string(font, p2 + Vector2(-60, rr + 22), str(n2.name), HORIZONTAL_ALIGNMENT_CENTER, 120, 13, Color(1, 1, 1, 0.95))
-				draw_string(font, p2 + Vector2(-60, rr + 36), str(n2.code), HORIZONTAL_ALIGNMENT_CENTER, 120, 13, K.pal("butter"))
+				draw_string(UIK.font_bold(), p2 + Vector2(-60, rr + 22), str(n2.name), HORIZONTAL_ALIGNMENT_CENTER, 120, 13, Color(1, 1, 1, 0.95))
+				draw_string(UIK.font_head(), p2 + Vector2(-60, rr + 38), str(n2.code), HORIZONTAL_ALIGNMENT_CENTER, 120, 13, K.pal("butter"))
 
 	func _option_ids() -> Array:
 		var ids: Array = []
@@ -183,15 +183,37 @@ class MapPanel extends Control:
 
 # ================================================================ builders
 
+static func _frame(title: String, color: String, icon: String) -> Array:
+	## a dimmed full-area backdrop with a big centred window. Returns [root, body]
+	var root: Control = Control.new()
+	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	root.mouse_filter = Control.MOUSE_FILTER_STOP
+	UIK.bg_color(root, Color(K.pal("night"), 0.78))
+	var w: Array = UIK.window(title, color, icon, 14)
+	var p: Control = w[0]
+	p.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	p.offset_left = 40
+	p.offset_right = -40
+	p.offset_top = 16
+	p.offset_bottom = -16
+	root.add_child(p)
+	return [root, w[1]]
+
 static func award_row(a: Dictionary) -> Control:
-	var p: PanelContainer = UIK.panel("butter", 6, 12)
+	var p: PanelContainer = UIK.panel("well", 8, 14)
+	var h: HBoxContainer = UIK.hbox(8)
+	p.add_child(h)
+	var who: String = str(a.who)
+	if who in K.SEATS or who == "dc":
+		h.add_child(UIK.portrait(str(K.SEAT_INFO[who].portrait), 48))
+	else:
+		h.add_child(UIK.badge("star", "yellow", 44))
 	var v: VBoxContainer = UIK.vbox(0)
-	p.add_child(v)
-	var who: String = K.seat_name(str(a.who)) if str(a.who) in K.SEATS else ("Damage Control" if str(a.who) == "dc" else "")
-	v.add_child(UIK.label("🏆 %s%s" % [a.title, (" – " + who) if who != "" else ""], 17))
-	var d: Label = UIK.label(str(a.desc), 14, Color(K.pal("ink"), 0.8))
-	d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	v.add_child(d)
+	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	h.add_child(v)
+	var name_s: String = K.seat_name(who) if (who in K.SEATS or who == "dc") else ""
+	v.add_child(UIK.heading("%s%s" % [a.title, ("  ·  " + name_s) if name_s != "" else ""], 15))
+	v.add_child(UIK.wrapped(UIK.label(str(a.desc), 13, K.pal("ink_soft"))))
 	return p
 
 static func event_list(events: Array) -> Control:
@@ -200,135 +222,132 @@ static func event_list(events: Array) -> Control:
 		var col: Color = K.pal("ink")
 		match str(e.kind):
 			"bad":
-				col = K.pal("coral").darkened(0.2)
+				col = K.pal("red").darkened(0.2)
 			"good":
-				col = Color(0.15, 0.5, 0.25)
+				col = K.pal("green").darkened(0.35)
 			"input":
-				col = K.pal("plum2")
+				col = K.pal("navy")
 		var who: String = K.seat_name(str(e.who)) if str(e.who) in K.SEATS else str(e.who).capitalize()
-		var l: Label = UIK.label("%s  %s: %s" % [K.fmt_time(float(e.t)), who, e.text], 14, col)
-		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		v.add_child(l)
+		v.add_child(UIK.wrapped(UIK.label("%s  %s: %s" % [K.fmt_time(float(e.t)), who, e.text], 14, col)))
 	return v
 
 static func debrief_panel(ph: Dictionary, is_captain: bool, mode: String, on_continue: Callable, on_retry: Callable, on_lobby: Callable) -> Control:
 	var d: Dictionary = ph.get("debrief", {})
-	var root: PanelContainer = UIK.panel("cream", 14, 24)
-	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	root.offset_left = 50
-	root.offset_right = -50
-	root.offset_top = 40
-	root.offset_bottom = -132
-	var v: VBoxContainer = UIK.vbox(8)
-	root.add_child(v)
 	var ok: bool = bool(d.get("ok", false))
-	var head: Label = UIK.label(("%s: COMPLETE!" if ok else "%s: FAILED") % str(d.get("title", "Encounter")), 30, K.pal("green").darkened(0.3) if ok else K.pal("coral").darkened(0.1))
-	v.add_child(head)
-	if not ok:
-		v.add_child(UIK.label(str(d.get("reason", "")), 18))
-	var sub: String = ""
+	var fr: Array = _frame(("MISSION COMPLETE: %s" if ok else "MISSION FAILED: %s") % str(d.get("title", "")), "green" if ok else "red", "check" if ok else "warning")
+	var v: VBoxContainer = fr[1]
+	var top: HBoxContainer = UIK.hbox(10)
+	v.add_child(top)
 	if d.has("time"):
-		sub = "Time %s (par %s)   Damages billed: %d" % [K.fmt_time(float(d.time)), K.fmt_time(float(d.get("par", 0.0))), int(float(d.get("damages", 0.0)))]
-	v.add_child(UIK.label(sub, 17))
-	if d.has("thrupp"):
-		v.add_child(UIK.label(str(d.thrupp), 16, K.pal("magenta")))
-	if d.has("setback"):
-		v.add_child(UIK.label(str(d.setback), 16, K.pal("coral")))
+		top.add_child(UIK.chip("Time %s  (par %s)" % [K.fmt_time(float(d.time)), K.fmt_time(float(d.get("par", 0.0)))], "blue", "clock"))
+		top.add_child(UIK.chip("Damages billed: %d" % int(float(d.get("damages", 0.0))), "orange", "scrap"))
+	var spoils: Dictionary = d.get("spoils", {})
+	if not spoils.is_empty():
+		top.add_child(UIK.chip("+%d scrap" % int(spoils.get("scrap", 0)), "yellow", "scrap"))
+	if not ok:
+		v.add_child(UIK.wrapped(UIK.heading(str(d.get("reason", "")), 18, K.pal("red").darkened(0.2))))
 	var cols: HBoxContainer = UIK.hbox(14)
 	cols.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	v.add_child(cols)
-	var left: VBoxContainer = UIK.vbox(6)
+	var left: VBoxContainer = UIK.vbox(8)
 	left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	cols.add_child(left)
 	if is_captain and d.has("trail"):
 		var rv: ReplayView = ReplayView.new()
 		rv.setup(d)
+		rv.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		left.add_child(rv)
-	var sc: ScrollContainer = ScrollContainer.new()
-	sc.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	sc.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	sc.custom_minimum_size = Vector2(300, 70)
-	left.add_child(sc)
-	if is_captain and d.has("events"):
+	if str(d.get("thrupp", "")) != "":
+		left.add_child(UIK.speech(str(d.thrupp), "thrupp", "", 52))
+	if d.has("setback"):
+		left.add_child(UIK.wrapped(UIK.heading(str(d.setback), 15, K.pal("red"))))
+	if d.has("events"):
+		left.add_child(UIK.heading("WHAT HAPPENED", 16))
+		var sc: ScrollContainer = ScrollContainer.new()
+		sc.custom_minimum_size = Vector2(0, 90)
+		if not is_captain:
+			sc.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		left.add_child(sc)
 		var el: Control = event_list(d.events)
 		el.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		sc.add_child(el)
-	var right: VBoxContainer = UIK.vbox(6)
-	right.custom_minimum_size = Vector2(340, 0)
+	var right: VBoxContainer = UIK.vbox(8)
+	right.custom_minimum_size = Vector2(380, 0)
 	cols.add_child(right)
-	right.add_child(UIK.label("CREW AWARDS", 18))
+	right.add_child(UIK.heading("CREW AWARDS", 18))
+	var asc: ScrollContainer = ScrollContainer.new()
+	asc.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	asc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	right.add_child(asc)
+	var av: VBoxContainer = UIK.vbox(6)
+	av.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	asc.add_child(av)
 	for a in d.get("awards", []):
-		right.add_child(award_row(a))
-	var spoils: Dictionary = d.get("spoils", {})
-	if not spoils.is_empty():
-		right.add_child(UIK.label("Spoils: %d scrap%s" % [int(spoils.get("scrap", 0)), ", +snacks" if int(spoils.get("snacks", 0)) > 0 else ""], 15))
+		av.add_child(award_row(a))
+	var br: HBoxContainer = UIK.hbox(10)
+	v.add_child(br)
 	if is_captain:
-		var br: HBoxContainer = UIK.hbox(10)
-		v.add_child(br)
-		br.add_child(UIK.btn("CONTINUE  ►", "green", on_continue))
+		br.add_child(UIK.btn("Continue", "green", on_continue, "play"))
 		if mode == "shift":
-			br.add_child(UIK.btn("RETRY", "tangerine", on_retry))
-			br.add_child(UIK.btn("BACK TO LOBBY", "cream2", on_lobby))
+			br.add_child(UIK.btn("Retry", "orange", on_retry, "back"))
+			br.add_child(UIK.btn("Back to the Crew Room", "neutral", on_lobby, "crew"))
 	else:
-		v.add_child(UIK.label("Waiting for the captain to continue...", 16, Color(K.pal("ink"), 0.7)))
-	return root
+		br.add_child(UIK.label("Waiting for the captain to continue...", 16, K.pal("ink_soft")))
+	return fr[0]
 
 static func gameover_panel(ph: Dictionary, is_captain: bool, mode: String, on_continue: Callable, on_retry: Callable, on_lobby: Callable) -> Control:
 	var d: Dictionary = ph.get("over", {})
-	var root: PanelContainer = UIK.panel("plum2", 14, 24)
-	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	root.offset_left = 80
-	root.offset_right = -80
-	root.offset_top = 50
-	root.offset_bottom = -132
-	var v: VBoxContainer = UIK.vbox(8)
-	root.add_child(v)
-	var cw: Color = K.pal("cream")
-	v.add_child(UIK.label("HEGEMONY VICTORY BROADCAST", 30, K.pal("gold")))
-	v.add_child(UIK.label("\"Glory is mandatory. Today's glory is brought to you by %s Thrupp.\"" % str(d.get("thrupp", "Admiral")), 18, cw))
-	var why: Label = UIK.label("The criminals were apprehended after the following events: %s" % str(d.get("reason", "")), 17, cw)
-	why.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	v.add_child(why)
+	var fr: Array = _frame("HEGEMONY VICTORY BROADCAST", "purple", "temper")
+	var v: VBoxContainer = fr[1]
+	var h: HBoxContainer = UIK.hbox(14)
+	h.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	v.add_child(h)
+	var left: VBoxContainer = UIK.vbox(8)
+	left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	h.add_child(left)
+	left.add_child(UIK.speech("Glory is mandatory. Today's glory is brought to you by %s Thrupp. The criminals were apprehended because: %s" % [str(d.get("thrupp", "Admiral")), str(d.get("reason", ""))], "thrupp", "Hegemony News", 80))
 	for line in d.get("lines", []):
-		var l: Label = UIK.label("• %s" % str(line), 16, K.pal("pink"))
-		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		v.add_child(l)
+		left.add_child(UIK.wrapped(UIK.label("• %s" % str(line), 15, K.pal("red").darkened(0.25))))
 	if is_captain and d.has("trail"):
 		var rv: ReplayView = ReplayView.new()
 		rv.setup(d)
 		rv.size_flags_vertical = Control.SIZE_EXPAND_FILL
-		v.add_child(rv)
-	var aw: HBoxContainer = UIK.hbox(8)
-	v.add_child(aw)
+		left.add_child(rv)
+	var right: VBoxContainer = UIK.vbox(6)
+	right.custom_minimum_size = Vector2(360, 0)
+	h.add_child(right)
+	right.add_child(UIK.heading("CREW AWARDS", 18))
 	for a in d.get("awards", []):
-		aw.add_child(award_row(a))
-	v.add_child(UIK.label("IGOR: \"Is over. Ship is gone. IGOR has seen worse. Not often. Rarely. Once.\"", 16, K.pal("mint")))
+		right.add_child(award_row(a))
+	right.add_child(UIK.speech("Is over. Ship is gone. IGOR has seen worse. Not often. Rarely. Once.", "igor", "", 52))
 	if is_captain:
 		var br: HBoxContainer = UIK.hbox(10)
 		v.add_child(br)
 		if mode == "shift":
-			br.add_child(UIK.btn("TRY AGAIN", "tangerine", on_retry))
-		br.add_child(UIK.btn("BACK TO LOBBY", "cream2", on_lobby))
-	return root
+			br.add_child(UIK.btn("Try again", "orange", on_retry, "back"))
+		br.add_child(UIK.btn("Back to the Crew Room", "neutral", on_lobby, "crew"))
+	return fr[0]
 
 static func ending_panel(ph: Dictionary, is_captain: bool, on_lobby: Callable) -> Control:
 	var d: Dictionary = ph.get("ending", {})
-	var root: PanelContainer = UIK.panel("butter", 16, 26)
-	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	root.offset_left = 100
-	root.offset_right = -100
-	root.offset_top = 60
-	root.offset_bottom = -132
-	var v: VBoxContainer = UIK.vbox(12)
-	root.add_child(v)
-	v.add_child(UIK.label("ENDING: %s" % str(d.get("title", "")), 36, K.pal("magenta")))
-	var t: Label = UIK.label(str(d.get("text", "")), 22)
-	t.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	v.add_child(t)
-	v.add_child(UIK.label(str(d.get("thrupp", "")), 18, K.pal("plum2")))
-	v.add_child(UIK.label("Jumps: %d    Scrap: %d    Pudding's average calm: %d%%" % [int(d.get("jumps", 0)), int(d.get("scrap", 0)), int(100.0 - float(d.get("calm", 50.0)))], 17))
+	var fr: Array = _frame("THE END: %s" % str(d.get("title", "")), "yellow", "star")
+	var v: VBoxContainer = fr[1]
+	var faces: HBoxContainer = UIK.hbox(-12)
+	faces.alignment = BoxContainer.ALIGNMENT_CENTER
+	for p in ["captain", "helm", "engines", "pudding", "power", "weapons", "sensors", "ops"]:
+		faces.add_child(UIK.portrait(p, 84))
+	v.add_child(faces)
+	v.add_child(UIK.wrapped(UIK.heading(str(d.get("text", "")), 21, K.pal("ink"), 1)))
+	var chips: HBoxContainer = UIK.hbox(8)
+	chips.alignment = BoxContainer.ALIGNMENT_CENTER
+	v.add_child(chips)
+	chips.add_child(UIK.chip("%d jumps" % int(d.get("jumps", 0)), "blue", "map"))
+	chips.add_child(UIK.chip("%d scrap" % int(d.get("scrap", 0)), "yellow", "scrap"))
+	chips.add_child(UIK.chip("Pudding calm %d%%" % int(100.0 - float(d.get("calm", 50.0))), "pink", "pudding"))
+	v.add_child(UIK.speech(str(d.get("thrupp", "")), "thrupp", "", 52))
 	v.add_child(UIK.spacer(true))
-	v.add_child(UIK.label("IGOR: \"IGOR has enjoyed this. IGOR did not say this. Delete.\"", 18, K.pal("teal").darkened(0.3)))
+	v.add_child(UIK.speech("IGOR has enjoyed this. IGOR did not say this. Delete.", "igor", "", 52))
 	if is_captain:
-		v.add_child(UIK.btn("BACK TO LOBBY", "green", on_lobby))
-	return root
+		v.add_child(UIK.btn("Back to the Crew Room", "green", on_lobby, "crew"))
+	return fr[0]

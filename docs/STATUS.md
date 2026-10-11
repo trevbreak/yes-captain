@@ -21,7 +21,11 @@ What exists in the Godot project versus the original plan (`GAME_PLAN.md`, `GAME
 | Black Box: event ticker, blame, replay, awards, Hegemony victory broadcast on failure | Done |
 | AI crew with personalities, hot-swap in both directions, Order Wheel, AI captain | Done |
 | Party modifiers: Glass Ship, Dampers Broken, Pudding Mode, EMP, Crew Rotation, Jargon | Done |
-| Two-Point-style UI kit, IGOR's PA subtitles + TTS, procedural sound | Done |
+| Two-Point-style design system v2: bundled Fredoka/Nunito, cards with coloured header ribbons and soft shadows, chunky lipped buttons, crew persona portraits, SVG icon set | Done (see `--styleguide`) |
+| Mission structure: Crew Room (choose mission, then pick roles with persona cards), per-encounter briefing (narrator, numbered plan, per-role tips), ready-up and countdown, live objective tracker | Done and tested |
+| Captain's bridge: window with our own ship's nose in view, rounded toy-like 3D models, soft nebulae, dashboard (hull, shields, comms, bridge cam, Overlord) | Done |
+| Automated layout QA (off-screen, clipped, overflowing, overlapping controls) at several resolutions | Done (`--layoutcheck`, part of the test suite) |
+| IGOR's PA subtitles + TTS, procedural sound | Done |
 | Headless test suite incl. networking and UI smoke tests | Done (`scripts/run_tests.sh`) |
 
 ## Not built (deliberately deferred)

@@ -4,6 +4,22 @@ extends Node3D
 ## The captain cannot move this camera. Only Sensors can change the viewscreen direction.
 
 const DUST_L: float = 1100.0
+## soft round billboard puff: alpha falls off radially from the quad centre
+const NEBULA_SH: String = """
+shader_type spatial;
+render_mode unshaded, blend_mix, depth_draw_never, cull_disabled;
+uniform vec4 color : source_color = vec4(1.0);
+uniform float alpha = 0.25;
+void vertex() {
+	MODELVIEW_MATRIX = VIEW_MATRIX * mat4(INV_VIEW_MATRIX[0], INV_VIEW_MATRIX[1], INV_VIEW_MATRIX[2], MODEL_MATRIX[3]);
+}
+void fragment() {
+	float d = length(UV - vec2(0.5)) * 2.0;
+	float a = 1.0 - smoothstep(0.0, 1.0, d);
+	ALBEDO = color.rgb;
+	ALPHA = alpha * a * a;
+}
+"""
 
 var cam: Camera3D
 var sun: DirectionalLight3D
@@ -28,6 +44,9 @@ var fov_punch: float = 0.0
 var cam_height: float = 26.0
 var lock_id: int = -1
 var shake: float = 0.0
+var bow: Node3D
+var view_name: String = "fwd"
+var fill: DirectionalLight3D
 
 func _ready() -> void:
 	env = WorldEnvironment.new()
@@ -36,13 +55,13 @@ func _ready() -> void:
 	e.background_color = Color.html("#241c47")
 	e.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	e.ambient_light_color = Color.html("#9a8fd6")
-	e.ambient_light_energy = 0.75
+	e.ambient_light_energy = 0.55
 	env.environment = e
 	add_child(env)
 	sun = DirectionalLight3D.new()
 	sun.rotation = Vector3(deg_to_rad(-38.0), deg_to_rad(40.0), 0)
 	sun.light_color = Color.html("#fff2d6")
-	sun.light_energy = 1.25
+	sun.light_energy = 1.15
 	add_child(sun)
 	cam = Camera3D.new()
 	cam.fov = 72.0
@@ -50,6 +69,14 @@ func _ready() -> void:
 	cam.far = 12000.0
 	cam.current = true
 	add_child(cam)
+	fill = DirectionalLight3D.new()
+	fill.rotation = Vector3(deg_to_rad(-20.0), deg_to_rad(-140.0), 0)
+	fill.light_color = Color.html("#9fc8ff")
+	fill.light_energy = 0.35
+	add_child(fill)
+	bow = Models.own_bow()
+	bow.position = Vector3(0, -6.6, -11.0)
+	cam.add_child(bow)
 	ents_root = Node3D.new()
 	add_child(ents_root)
 	fx_root = Node3D.new()
@@ -91,35 +118,24 @@ func _build_stars() -> void:
 func _build_nebulae() -> void:
 	nebulae = Node3D.new()
 	add_child(nebulae)
-	var grad: Gradient = Gradient.new()
-	grad.set_color(0, Color(1, 1, 1, 0.55))
-	grad.set_color(1, Color(1, 1, 1, 0.0))
-	var tex: GradientTexture2D = GradientTexture2D.new()
-	tex.gradient = grad
-	tex.fill = GradientTexture2D.FILL_RADIAL
-	tex.fill_from = Vector2(0.5, 0.5)
-	tex.fill_to = Vector2(1.0, 0.5)
-	tex.width = 256
-	tex.height = 256
-	var cols: Array = [K.pal("lilac"), K.pal("pink"), K.pal("teal"), K.pal("plum2"), K.pal("magenta")]
+	var sh: Shader = Shader.new()
+	sh.code = NEBULA_SH
+	var cols: Array = [K.pal("purple"), K.pal("pink"), K.pal("sensors"), K.pal("navy"), K.pal("blue")]
 	var rng: RandomNumberGenerator = RandomNumberGenerator.new()
 	rng.seed = 5
 	for i in 12:
 		var m: MeshInstance3D = MeshInstance3D.new()
 		var q: QuadMesh = QuadMesh.new()
-		q.size = Vector2.ONE * rng.randf_range(2200, 4200)
+		q.size = Vector2.ONE * rng.randf_range(2600, 4800)
 		m.mesh = q
 		var dir: Vector3 = Vector3(rng.randf_range(-1, 1), rng.randf_range(-0.25, 0.55), rng.randf_range(-1, 1)).normalized()
 		m.position = dir * 7400.0
-		var mat: StandardMaterial3D = StandardMaterial3D.new()
-		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
-		mat.albedo_texture = tex
-		var c: Color = cols[i % cols.size()]
-		mat.albedo_color = Color(c.r, c.g, c.b, 0.28)
-		mat.no_depth_test = false
+		var mat: ShaderMaterial = ShaderMaterial.new()
+		mat.shader = sh
+		mat.set_shader_parameter("color", cols[i % cols.size()])
+		mat.set_shader_parameter("alpha", rng.randf_range(0.18, 0.3))
 		m.material_override = mat
+		m.extra_cull_margin = 4000.0
 		nebulae.add_child(m)
 	# a few chunky planets
 	for j in 3:
@@ -174,6 +190,7 @@ func apply(v: Dictionary) -> void:
 	ship_pos = Vector2(float(v.x), float(v.y))
 	ship_vel = Vector2(float(v.vx), float(v.vy))
 	view_ang = float(v.view_ang)
+	view_name = str(v.get("view", "fwd"))
 	angvel = float(v.av)
 	shake = float(v.shake)
 	lock_id = int(v.get("lock", -1))
@@ -214,6 +231,9 @@ func _process(delta: float) -> void:
 	bank = lerpf(bank, clampf(-angvel * 0.07, -0.25, 0.25), 1.0 - exp(-6.0 * delta))
 	cam.rotate_object_local(Vector3.FORWARD, bank + sh.x * 0.01)
 	fov_punch = lerpf(fov_punch, 0.0, 1.0 - exp(-4.0 * delta))
+	if bow != null:
+		bow.visible = view_name == "fwd"
+		bow.position.y = -6.6 + sin(t * 1.7) * 0.08
 	cam.fov = 72.0 + fov_punch
 	# scenery follows the camera so it feels infinitely far away
 	stars.global_position = eye

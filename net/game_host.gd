@@ -56,6 +56,7 @@ var run_log: Array = []
 var gameover_info: Dictionary = {}
 var phase_t: float = 0.0
 var cascade: Array = []
+var briefing: Dictionary = {}
 
 func _init() -> void:
 	rng.randomize()
@@ -386,7 +387,7 @@ func _reset_ship_pose() -> void:
 	s.charging = false
 	s.jump_charge = 0.0
 
-func _begin_encounter(kind: String) -> void:
+func _begin_encounter(kind: String, with_briefing: bool = true) -> void:
 	_reset_ship_pose()
 	world.clear_entities()
 	world.ship.reset_for_encounter()
@@ -411,16 +412,67 @@ func _begin_encounter(kind: String) -> void:
 	var enc: Encounter = Encounters.make(kind, world.temper)
 	world.enc = enc
 	enc.setup(world)
-	phase = "encounter"
+	phase = "briefing"
 	phase_t = 0.0
 	pursuit_done = false
 	shared = {}
+	briefing = {"ready": {}, "countdown": -1.0, "t": 0.0}
+	if not with_briefing:
+		briefing["countdown"] = 3.0
 	if bot_captain != null:
 		bot_captain.on_phase_change()
+	_event(0, {"t": "briefing", "title": enc.title, "family": enc.family})
+
+func _launch_encounter() -> void:
+	phase = "encounter"
+	phase_t = 0.0
+	briefing = {}
+	if bot_captain != null:
+		bot_captain.on_phase_change()
+	var enc: Encounter = world.enc
 	_event(0, {"t": "encounter_start", "title": enc.title, "family": enc.family})
 	if run != null and run.encounters_done == 0:
 		_igor("welcome", {}, 3)
+	blackbox.reset(world.t)
 	blackbox.log_event(world.t, "captain", "Encounter begins: %s" % enc.title, "info")
+
+func humans_with_seats() -> Array:
+	var out: Array = []
+	for pid in peers.keys():
+		if not peers[pid].gone and not peers[pid].seats.is_empty():
+			out.append(pid)
+	return out
+
+func _briefing_tick(dt: float) -> void:
+	briefing["t"] = float(briefing.get("t", 0.0)) + dt
+	var cd: float = float(briefing.get("countdown", -1.0))
+	if cd >= 0.0:
+		cd -= dt
+		briefing["countdown"] = cd
+		if cd <= 0.0:
+			_launch_encounter()
+		return
+	var humans: Array = humans_with_seats()
+	var all_ready: bool = true
+	for pid in humans:
+		if not bool(briefing["ready"].get(pid, false)):
+			all_ready = false
+	if humans.is_empty():
+		all_ready = float(briefing["t"]) > 1.5
+	if all_ready:
+		briefing["countdown"] = 3.0
+		_event(0, {"t": "countdown"})
+
+func set_ready(peer: int, on: bool) -> void:
+	if phase != "briefing":
+		return
+	briefing["ready"][peer] = on
+	if not on and float(briefing.get("countdown", -1.0)) >= 0.0:
+		briefing["countdown"] = -1.0
+
+func force_launch() -> void:
+	if phase == "briefing":
+		_launch_encounter()
 
 # ================================================================ messages from peers
 
@@ -457,6 +509,11 @@ func handle_msg(peer: int, kind: String, d: Dictionary) -> void:
 		"start":
 			if peer == admin and phase == "lobby":
 				start_game()
+		"ready":
+			set_ready(peer, bool(d.get("on", true)))
+		"launch":
+			if (peer == admin or seat_owner.get("captain", 0) == peer) and phase == "briefing":
+				briefing["countdown"] = minf(float(briefing.get("countdown", 3.0)) if float(briefing.get("countdown", -1.0)) >= 0.0 else 3.0, 3.0)
 		"pit_request":
 			if pit.has("requests") and peers[peer].active in K.STATIONS:
 				pit.requests[str(d.get("id", ""))] = peers[peer].active
@@ -565,7 +622,7 @@ func _captain_cmd(cmd: String, d: Dictionary) -> void:
 			captain_continue()
 		"retry":
 			if mode == "shift" and (phase == "debrief" or phase == "gameover"):
-				_begin_encounter(shift_kind)
+				_begin_encounter(shift_kind, false)
 		"lobby":
 			to_lobby()
 		"punch":
@@ -728,6 +785,9 @@ func sim_step(dt: float) -> void:
 		return
 	step_count += 1
 	phase_t += dt
+	if phase == "briefing":
+		_briefing_tick(dt)
+		return
 	if phase == "debrief" or phase == "gameover" or phase == "ending" or phase == "pitstop":
 		# the world idles but bots/captain still tick (so AI captain can move on)
 		if ai_captain and bot_captain != null:
@@ -1145,7 +1205,30 @@ func _phase_data(act: String, peer: int) -> Dictionary:
 			d["ending"] = ending
 		"jumping":
 			d["jump_t"] = jump_t
+		"briefing":
+			if world.enc != null:
+				d["briefing"] = world.enc.briefing()
+			d["countdown"] = float(briefing.get("countdown", -1.0))
+			d["roster"] = roster(peer)
+			d["you_ready"] = bool(briefing.get("ready", {}).get(peer, false))
+			d["can_launch"] = peer == admin or seat_owner.get("captain", 0) == peer
+			d["mode"] = mode
+			if run != null:
+				d["progress"] = {"done": run.encounters_done, "act": 1 if run.cur < 2 else (2 if run.cur < run.nodes.size() - 4 else 3)}
 	return d
+
+func roster(for_peer: int = 0) -> Array:
+	var out: Array = []
+	for s in K.SEATS:
+		var o: int = int(seat_owner.get(s, 0))
+		var e: Dictionary = {"seat": s, "owner": o, "name": peers[o].name if peers.has(o) else "", "mine": o == for_peer and o != 0,
+			"bot": bots.has(s), "kind": str(bots[s].kind) if bots.has(s) else "", "ready": false}
+		if o != 0:
+			e["ready"] = bool(briefing.get("ready", {}).get(o, false))
+		elif bots.has(s):
+			e["ready"] = true
+		out.append(e)
+	return out
 
 func _map_dict() -> Dictionary:
 	var ns: Array = []

@@ -9,11 +9,11 @@ var cons: Dictionary = {}
 var selected: String = ""
 var pud_at: String = ""
 var t: float = 0.0
-const CW: float = 104.0
-const CH: float = 76.0
+const CW: float = 102.0
+const CH: float = 84.0
 
 func _init() -> void:
-	custom_minimum_size = Vector2(CW * 5.0 + 12.0, CH * 5.0 + 12.0)
+	custom_minimum_size = Vector2(CW * 5.0 + 8.0, CH * 5.0 + 8.0)
 	mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 
 func _ready() -> void:
@@ -24,7 +24,7 @@ func _process(delta: float) -> void:
 	queue_redraw()
 
 func _cell_rect(m: Dictionary) -> Rect2:
-	return Rect2(6.0 + float(m.gx) * CW, 6.0 + float(m.gy) * CH, CW - 6.0, CH - 6.0)
+	return Rect2(4.0 + float(m.gx) * CW, 4.0 + float(m.gy) * CH, CW - 8.0, CH - 8.0)
 
 func _gui_input(ev: InputEvent) -> void:
 	if ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT:
@@ -36,56 +36,55 @@ func _gui_input(ev: InputEvent) -> void:
 
 func _draw() -> void:
 	var ink: Color = K.pal("ink")
-	var font: Font = get_theme_default_font()
-	draw_string(font, Vector2(8, size.y - 4), "FRONT is up. Click a module.", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(ink, 0.6))
+	var fh: Font = UIK.font_head()
+	var fb: Font = UIK.font_bold()
+	# hull silhouette behind the grid
+	draw_style_box(UIK.sb(K.pal("well"), 40, Color(0, 0, 0, 0), 0, 0), Rect2(CW * 0.4, 0, CW * 4.2, CH * 5.0 + 8.0))
 	for m in mods:
 		var r: Rect2 = _cell_rect(m)
 		var st: int = int(m.state)
-		var col: Color = K.pal("white")
-		match st:
-			0:
-				col = K.pal("mint").lightened(0.35)
-			1:
-				col = K.pal("butter")
-			2:
-				col = K.pal("tangerine")
-			3:
-				col = K.pal("coral")
+		var col: Color = [K.pal("card"), K.pal("yellow").lightened(0.3), K.pal("orange"), K.pal("red")][clampi(st, 0, 3)]
+		if bool(m.fire):
+			col = K.pal("red").lerp(K.pal("orange"), 0.5 + 0.5 * sin(t * 8.0))
 		if bool(m.nopower):
-			col = col.lerp(Color(0.55, 0.55, 0.6), 0.65)
-		var bw: int = 5 if str(m.id) == selected else 3
-		var bc: Color = K.pal("plum2") if str(m.id) == selected else ink
-		draw_style_box(UIK.box(col, bc, 12, bw, 0), r)
-		draw_string(font, r.position + Vector2(4, 20), str(m.label), HORIZONTAL_ALIGNMENT_LEFT, r.size.x - 8, 14, ink)
+			col = col.lerp(Color(0.6, 0.6, 0.66), 0.6)
+		var sel: bool = str(m.id) == selected
+		var s: StyleBoxFlat = UIK.sb(col, 12, K.pal("blue") if sel else col.darkened(0.2), 4 if sel else 2, 0)
+		s.border_width_bottom = 5 if not sel else 4
+		draw_style_box(s, r)
+		var tc: Color = UIK.text_on(col)
+		draw_string(fh, r.position + Vector2(6, 20), str(m.label), HORIZONTAL_ALIGNMENT_LEFT, r.size.x - 10, 14, tc)
 		var sub: String = ""
+		var ic: String = ""
 		if bool(m.fire):
 			sub = "FIRE!"
-			draw_circle(r.position + Vector2(r.size.x - 18, r.size.y - 22), 9.0 + sin(t * 12.0) * 2.0, K.pal("tangerine"))
-			draw_circle(r.position + Vector2(r.size.x - 18, r.size.y - 22), 5.0, K.pal("butter"))
+			ic = "fire"
 		elif bool(m.breach):
 			sub = "BREACH"
-			draw_arc(r.position + Vector2(r.size.x - 18, r.size.y - 22), 8.0, 0, TAU, 12, K.pal("sky"), 3.0)
+			ic = "warning"
 		elif bool(m.nopower):
-			sub = "NO POWER"
+			sub = "no power"
+			ic = "power"
 		elif bool(m.warn):
-			sub = "about to fail!"
+			sub = "about to fail"
+			ic = "warning"
 		elif st >= 1:
 			sub = ["", "rattling", "faulted", "FAILED"][st]
+			ic = "dc" if st >= 2 else ""
 		if sub != "":
-			draw_string(font, r.position + Vector2(4, 40), sub, HORIZONTAL_ALIGNMENT_LEFT, r.size.x - 8, 14, K.pal("ink"))
-		# conduit tag
-		var ccut: bool = false
+			draw_string(fb, r.position + Vector2(6, 40), sub, HORIZONTAL_ALIGNMENT_LEFT, r.size.x - 10, 13, tc)
+		if ic != "":
+			var tex: Texture2D = UIK.icon(ic, 40)
+			draw_texture_rect(tex, Rect2(r.end.x - 26, r.end.y - 26, 20, 20), false, tc)
 		if str(m.conduit) != "":
-			var cd: Dictionary = cons.get(str(m.conduit), {})
-			ccut = bool(cd.get("cut", false))
-			draw_string(font, r.position + Vector2(4, r.size.y - 6), str(m.conduit).substr(2), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(ink, 0.6 if not ccut else 1.0))
-		# repair progress
+			var cut: bool = bool(cons.get(str(m.conduit), {}).get("cut", false))
+			draw_string(fb, Vector2(r.position.x + 6, r.end.y - 9), "cable " + str(m.conduit).substr(2).to_lower(), HORIZONTAL_ALIGNMENT_LEFT, r.size.x - 34, 11, Color(tc, 0.55) if not cut else K.pal("red").darkened(0.3))
 		var wprog: float = float(m.work)
 		if wprog > 0.01:
-			draw_rect(Rect2(r.position.x + 4, r.end.y - 14, (r.size.x - 8) * wprog, 5), K.pal("green"))
+			draw_style_box(UIK.sb(K.pal("green"), 3, Color(0, 0, 0, 0), 0, 0), Rect2(r.position.x + 6, r.position.y + 46, (r.size.x - 12) * wprog, 6))
 		if str(m.id) == pud_at:
-			draw_circle(r.position + Vector2(r.size.x - 20, 16), 10.0, K.pal("pink"))
-			draw_string(font, r.position + Vector2(r.size.x - 28, 21), "P", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, ink)
+			draw_texture_rect(UIK.portrait_tex("pudding", 64), Rect2(r.end.x - 34, r.position.y + 2, 30, 30), false)
 		if int(m.patched) > 0:
-			draw_rect(Rect2(r.end.x - 16, r.position.y + 28, 12, 7), Color(0.7, 0.65, 0.5), true)
-			draw_rect(Rect2(r.end.x - 16, r.position.y + 28, 12, 7), ink, false, 1.0)
+			var tp: Rect2 = Rect2(r.end.x - 22, r.position.y + 26, 16, 8)
+			draw_rect(tp, Color(0.78, 0.74, 0.6))
+			draw_rect(tp, Color(0.55, 0.5, 0.4), false, 1.0)
