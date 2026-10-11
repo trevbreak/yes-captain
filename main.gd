@@ -48,7 +48,7 @@ func _parse_args() -> void:
 		if a.begins_with("--"):
 			var kv: PackedStringArray = a.substr(2).split("=", true, 1)
 			args[kv[0]] = kv[1] if kv.size() > 1 else "1"
-	if args.has("autotest") or args.has("layoutcheck") or args.has("tour"):
+	if args.has("autotest") or args.has("layoutcheck") or args.has("tour") or args.has("readmeshots"):
 		Progress.persist = false
 		Progress.unlock_all()
 	if args.has("shots"):
@@ -78,6 +78,10 @@ func _parse_args() -> void:
 		_clienttest.call_deferred()
 	elif args.has("menushot"):
 		_menushot.call_deferred()
+	elif args.has("readmeshots"):
+		args["shots"] = args.readmeshots
+		get_window().always_on_top = true
+		_readmeshots.call_deferred()
 
 func _show(which: String) -> void:
 	state = which
@@ -175,6 +179,84 @@ func _start_mission(id: String, claim: Array, autopilot: bool) -> void:
 	await _wait(0.3)
 	Net.send("start")
 	await _wait(0.5)
+
+func _play(id: String, seconds: float) -> void:
+	## start a mission with robots at every station and let it run a while
+	if Net.host.phase != "lobby":
+		Net.host.to_lobby()
+		await _wait(0.4)
+	await _start_mission(id, K.SEATS, true)
+	await _launch()
+	await _wait(seconds)
+
+func _readmeshots() -> void:
+	## the screenshots in docs/screenshots, taken in good-looking states
+	await _wait(1.0)
+	await _shot("01_title")
+	_on_solo("Captain")
+	await _wait(0.4)
+	for s in ["captain", "helm", "engines"]:
+		Net.send("claim", {"seat": s})
+	Net.send("opt", {"key": "mission", "val": "bigone"})
+	await _wait(0.6)
+	await _shot("02_crew_room")
+	await _start_mission("bigone", K.SEATS, true)
+	await _wait(0.8)
+	var b: BriefingUI = game.briefing_ui
+	b._goto(2, false)
+	UIK.stop_speech()
+	await _wait(0.2)
+	b.page_text.visible_ratio = 1.0
+	await _shot("03_briefing")
+	await _launch()
+	await _wait(7.0)
+	Net.send("active", {"seat": "captain"})
+	# wait for a moment when the captain has something to shout about
+	var t0: int = Time.get_ticks_msec()
+	while Time.get_ticks_msec() - t0 < 8000:
+		var warns: Array = Snapshots.forecasts(Net.host.world)
+		if not warns.is_empty() and int(warns[0].level) >= 3:
+			break
+		await _wait(0.1)
+	await _wait(0.5)
+	await _shot("04_captain")
+	Net.send("active", {"seat": "weapons"})
+	await _wait(0.8)
+	await _shot("05_weapons")
+	Net.send("active", {"seat": "sensors"})
+	await _wait(0.8)
+	await _shot("06_sensors")
+	await _play("lesson", 4.0)
+	Net.send("active", {"seat": "helm"})
+	await _wait(0.8)
+	await _shot("07_helm")
+	await _play("hot", 9.0)
+	Net.send("active", {"seat": "engines"})
+	await _wait(0.8)
+	await _shot("08_engines")
+	await _play("pet", 12.0)
+	Net.send("active", {"seat": "shields"})
+	await _wait(0.8)
+	await _shot("09_shields")
+	await _play("brownout", 5.0)
+	Net.host.autopilot = false
+	Net.host._sync_bots()
+	var w: World = Net.host.world
+	w.break_system("engine_s", "test", true)
+	w.break_system("gun", "test", false)
+	w.ship.sys.shield.hp = 45.0
+	Net.send("active", {"seat": "engineer"})
+	await _wait(0.4)
+	Net.intent("engineer", "select", "engine_s")
+	Net.intent("engineer", "repair", true)
+	await _wait(1.0)
+	await _shot("10_engineer")
+	Net.intent("engineer", "repair", false)
+	Net.host.mission.done = true
+	await _wait(1.0)
+	await _shot("11_debrief")
+	print("README SHOTS DONE")
+	get_tree().quit(0)
 
 func _launch() -> void:
 	if Net.host != null and Net.host.phase == "briefing":
@@ -285,6 +367,8 @@ func _poke(root: Node) -> int:
 
 func _autotest() -> void:
 	## screenshots of every seat in a mission (robots fly it), or --exercise to poke every control
+	if Net.host == null:
+		_on_solo("Captain")
 	await _wait(0.6)
 	var id: String = str(args.get("autotest", "lesson"))
 	if id == "1":
@@ -327,6 +411,8 @@ func _autotest() -> void:
 
 func _tour() -> void:
 	## a robot crew plays the career; screenshot every phase change
+	if Net.host == null:
+		_on_solo("Captain")
 	await _wait(0.6)
 	var first: String = str(args.get("tour", "lesson"))
 	if first == "1":
