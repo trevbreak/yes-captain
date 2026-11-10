@@ -25,8 +25,25 @@ var w: World = null
 
 const BASE_FEATURES: Dictionary = {"damage": true}
 
-func add(text: String, hints: Dictionary, check: Callable, enter: Callable = Callable(), goal: Callable = Callable()) -> void:
-	steps.append({"text": text, "hints": hints, "check": check, "enter": enter, "goal": goal})
+## what each seat can usefully be doing when a step has nothing special for them: nobody just waits
+const STANDING: Dictionary = {
+	"captain": "Watch the chart and the ship board. Say what you see, and who should do what.",
+	"helm": "Hold the course the captain gave you. Remember: the ship turns tighter when it's slow.",
+	"engines": "Keep the speed where the captain wants it. Ease off for sharp turns; Helm will thank you.",
+	"weapons": "Sweep the turret round and call out anything you see down the barrel.",
+	"sensors": "Scan every ? on the radar. Scanned enemies get an aiming mark in Weapons' scope.",
+	"shields": "Keep the shield between us and the nearest trouble. Ask the captain where that is.",
+	"engineer": "Check every room. Patch dents now, while it's quiet: click a room, hold REPAIR.",
+}
+
+func add(text: String, hints: Dictionary, check: Callable, enter: Callable = Callable(), goal: Callable = Callable(), bot: Dictionary = {}) -> void:
+	## bot: what a robot crew needs to know to fly this step (a human captain would just say it):
+	##   stop: come to rest this far from the goal (0 = on it, 1e6 = stop right now)   slow: creep
+	##   run: flee, boosting allowed   behind: tag of a ship to get behind   seek: "tractor" = nearest thing to haul
+	steps.append({"text": text, "hints": hints, "check": check, "enter": enter, "goal": goal, "bot": bot})
+
+func bot_hint() -> Dictionary:
+	return cur().get("bot", {})
 
 func setup(world: World) -> void:
 	w = world
@@ -148,7 +165,7 @@ func hint(station: String) -> String:
 	if done:
 		return "Done! Well flown."
 	var h: Dictionary = cur().get("hints", {})
-	return str(h.get(station, h.get("*", "Nothing for you right now. Listen to the captain, and be ready.")))
+	return str(h.get(station, h.get("*", STANDING.get(station, "Listen to the captain."))))
 
 func goal_pos() -> Variant:
 	var g: Callable = cur().get("goal", Callable())
@@ -171,6 +188,13 @@ func stars() -> int:
 	if t <= par:
 		s += 1
 	return s
+
+func is_job() -> bool:
+	## true for the Shift's dealt jobs (see Jobs.Job)
+	return false
+
+func result() -> Dictionary:
+	return {"pay": 0, "lines": []}
 
 func briefing() -> Dictionary:
 	var plan: Array = []

@@ -8,6 +8,7 @@ var v: Dictionary = {}
 var view_r: float = 520.0
 var _tex: Dictionary = {}
 var _seen_fx: Dictionary = {}
+var _wake: Array = []
 
 const SPRITE: Dictionary = {
 	"unknown": "obj_unknown", "ring": "obj_ring", "target": "obj_target", "buoy": "obj_buoy", "drone": "obj_drone",
@@ -61,19 +62,34 @@ func _draw() -> void:
 	var fb: Font = UIK.font("body")
 	var tnow: float = Time.get_ticks_msec() / 1000.0
 	# grid (100 m squares), sliding under us
+	# a sea chart, not graph paper: faint sepia lines, every fifth one firmer
 	var step: float = 100.0 * k
-	var gcol: Color = Color(UIK.c("blue"), 0.22)
-	var ox: float = fposmod(-sp.x * k + c.x, step)
-	var oy: float = fposmod(-sp.y * k + c.y, step)
-	var x: float = ox
+	var x: float = fposmod(-sp.x * k + c.x, step)
+	var ix: int = int(floor((x - c.x) / step + sp.x / 100.0 + 0.5))
 	while x < size.x:
-		draw_line(Vector2(x, 0), Vector2(x, size.y), gcol, 1.5)
+		draw_line(Vector2(x, 0), Vector2(x, size.y), Color(K.pal("ink_soft"), 0.28 if ix % 5 == 0 else 0.11), 2.0 if ix % 5 == 0 else 1.2)
 		x += step
-	var y: float = oy
+		ix += 1
+	var y: float = fposmod(-sp.y * k + c.y, step)
+	var iy: int = int(floor((y - c.y) / step + sp.y / 100.0 + 0.5))
 	while y < size.y:
-		draw_line(Vector2(0, y), Vector2(size.x, y), gcol, 1.5)
+		draw_line(Vector2(0, y), Vector2(size.x, y), Color(K.pal("ink_soft"), 0.28 if iy % 5 == 0 else 0.11), 2.0 if iy % 5 == 0 else 1.2)
 		y += step
+		iy += 1
+	# somebody's tea has been on this chart
+	draw_arc(Vector2(size.x * 0.82, size.y * 0.78), 34.0, 0.3, TAU - 0.5, 40, Color(K.pal("brown"), 0.16), 5.0, true)
+	draw_arc(Vector2(size.x * 0.82 + 3.0, size.y * 0.78 + 2.0), 30.0, 1.0, TAU, 40, Color(K.pal("brown"), 0.08), 3.0, true)
 	var to_s: Callable = func(p: Vector2) -> Vector2: return c + (p - sp) * k
+	# where we've been: a pencil line behind the ship
+	if _wake.is_empty() or (_wake[_wake.size() - 1] as Vector2).distance_to(sp) > 22.0:
+		_wake.append(sp)
+		if _wake.size() > 60:
+			_wake.pop_front()
+	if not _wake.is_empty() and (_wake[_wake.size() - 1] as Vector2).distance_to(sp) > 600.0:
+		_wake.clear()
+	for wi in range(1, _wake.size()):
+		if wi % 2 == 0:
+			draw_line(to_s.call(_wake[wi - 1]), to_s.call(_wake[wi]), Color(UIK.ink(), 0.3 * float(wi) / float(_wake.size())), 2.5, true)
 	# tractor range
 	if ship.get("tractor", -1) != null and v.get("_feat_tractor", false):
 		draw_arc(c, 150.0 * k, 0.0, TAU, 48, Color(UIK.c("lilac"), 0.6), 2.0, true)
@@ -120,7 +136,7 @@ func _draw() -> void:
 		else:
 			draw_texture_rect(tex, Rect2(p - sz / 2.0, sz), false, mod)
 		if kind == "ring" and str(e.note) == "done":
-			draw_string(f, p + Vector2(-9, 9), "✓", HORIZONTAL_ALIGNMENT_LEFT, -1, 26, UIK.c("green"))
+			draw_texture_rect(Art.sized("icon_check", 26), Rect2(p - Vector2(13, 13), Vector2(26, 26)), false, UIK.c("green"))
 		if bool(e.get("thrown", false)):
 			var vdir: Vector2 = (c - p).normalized()
 			_dashed(p, p + vdir * 46.0, UIK.c("red"), 3.0, 8.0)
@@ -211,7 +227,7 @@ func _draw() -> void:
 			draw_string_outline(f, lp + Vector2(-ls.x / 2.0, 6), lbl, HORIZONTAL_ALIGNMENT_LEFT, -1, 17, 5, Color("#e9dcbb"))
 			draw_string(f, lp + Vector2(-ls.x / 2.0, 6), lbl, HORIZONTAL_ALIGNMENT_LEFT, -1, 17, UIK.ink())
 	# compass + scale
-	_compass(Vector2(size.x - 44.0, 46.0))
+	_compass(Vector2(size.x - 54.0, 58.0))
 	var bar_m: int = 100 if view_r < 600.0 else 200
 	var bl: float = bar_m * k
 	var bp: Vector2 = Vector2(18.0, size.y - 18.0)
@@ -253,8 +269,9 @@ func _flag(p: Vector2) -> void:
 	draw_circle(p, 5.0, UIK.ink())
 
 func _compass(c: Vector2) -> void:
-	draw_circle(c, 24.0, Color(UIK.c("cream"), 0.9))
-	draw_arc(c, 24.0, 0.0, TAU, 32, UIK.ink(), 2.5, true)
-	draw_colored_polygon(PackedVector2Array([c + Vector2(0, -20), c + Vector2(7, 2), c + Vector2(-7, 2)]), UIK.c("red"))
-	draw_colored_polygon(PackedVector2Array([c + Vector2(0, 20), c + Vector2(7, -2), c + Vector2(-7, -2)]), UIK.ink())
-	draw_string(UIK.font("head"), c + Vector2(-7, -26), "N", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, UIK.ink())
+	## an inked compass rose; the red point is north
+	var s: float = 84.0
+	draw_texture_rect(_t("doodad_rose", 0.8), Rect2(c - Vector2(s, s) / 2.0, Vector2(s, s)), false)
+	var f: Font = UIK.font("head")
+	draw_string_outline(f, c + Vector2(-7, -s / 2.0 + 2.0), "N", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, 6, Color("#e9dcbb"))
+	draw_string(f, c + Vector2(-7, -s / 2.0 + 2.0), "N", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, UIK.c("red"))

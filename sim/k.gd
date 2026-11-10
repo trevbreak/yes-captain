@@ -4,6 +4,12 @@ extends RefCounted
 
 const SEATS: Array = ["captain", "helm", "engines", "weapons", "sensors", "shields", "engineer"]
 const STATIONS: Array = ["helm", "engines", "weapons", "sensors", "shields", "engineer"]
+## small crews: one player takes a pair of stations and flips between the two screens
+const PAIRS: Array = [
+	{"id": "pilot", "name": "Pilot", "seats": ["helm", "engines"], "blurb": "Wheel and throttle"},
+	{"id": "gunner", "name": "Gunner", "seats": ["weapons", "shields"], "blurb": "Gun and shield"},
+	{"id": "tech", "name": "Tech", "seats": ["sensors", "engineer"], "blurb": "Radar and repairs"},
+]
 const DT: float = 1.0 / 30.0
 const SNAP_HZ: float = 15.0
 const PORT_DEFAULT: int = 7777

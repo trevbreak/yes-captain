@@ -18,6 +18,8 @@ func tick(w: World, dt: float) -> void:
 	if think_t > 0.0:
 		return
 	think_t = rng.randf_range(0.14, 0.2)
+	if _help_engineer(w):
+		return
 	match station:
 		"helm":
 			_helm(w)
@@ -36,7 +38,26 @@ func tick(w: World, dt: float) -> void:
 const DIAL_RATE: float = 2.6
 
 func act(w: World, key: String, val: Variant) -> void:
-	Intents.apply(w, station, key, val)
+	Intents.apply(w, station, key, val, true)
+
+func _help_engineer(w: World) -> bool:
+	## IGOR's manual wants something from this station while the Engineer fixes a glitch: do it
+	var a: Dictionary = Glitches.bot_ask(w, station)
+	if a.is_empty():
+		return false
+	match str(a.key):
+		"throttle", "wheel":
+			act(w, str(a.key), float(a.val))
+		"aim":
+			dial(w, "aim", w.ship.aim, float(a.val))
+			act(w, "fire", false)
+		"dir":
+			dial(w, "dir", w.ship.shield_dir, float(a.val))
+		"scan":
+			act(w, "scan", true)
+		"fire":
+			act(w, "fire", true)
+	return true
 
 func dial(w: World, key: String, current: float, target: float) -> void:
 	## move a dial towards target at human speed (we tick about every 0.17 s)
@@ -50,6 +71,20 @@ static func goal(w: World) -> Variant:
 	var m: Mission = w.mission
 	if m == null:
 		return null
+	var hint: Dictionary = m.bot_hint()
+	if hint.has("behind"):
+		var big: Dictionary = m.tagged(str(hint.behind))
+		if not big.is_empty():
+			return big.pos - Vector2.from_angle(float(big.heading)) * 230.0
+	if str(hint.get("seek", "")) == "tractor":
+		var near: Variant = null
+		var nd: float = 1e9
+		for te in w.ents:
+			if te.alive and te.tractor and te.pos.distance_to(w.ship.pos) < nd:
+				nd = te.pos.distance_to(w.ship.pos)
+				near = te.pos
+		if near != null:
+			return near
 	# special cases a captain would call out
 	if m.id == "bigone" and m.step == 1:
 		var cr: Dictionary = m.tagged("cruiser")
@@ -77,10 +112,14 @@ static func goal(w: World) -> Variant:
 static func ask(w: World) -> String:
 	## the customs officer's current demand, once Sensors has heard it
 	var m: Mission = w.mission
-	if m == null or m.id != "customs" or not bool(w.hail.get("heard", false)):
+	if m == null or not bool(w.hail.get("heard", false)):
 		return ""
 	var c: Variant = m.get("current")
 	return str(c.get("test", "")) if c is Dictionary else ""
+
+static func ask_val(w: World) -> float:
+	var c: Variant = w.mission.get("current") if w.mission != null else null
+	return float(c.get("val", 0.0)) if c is Dictionary else 0.0
 
 static func threats(w: World) -> Array:
 	var out: Array = []
@@ -125,6 +164,8 @@ func _helm(w: World) -> void:
 	var g: Variant = goal(w)
 	if ask(w) == "heading90":
 		want = 0.0
+	elif ask(w) == "heading":
+		want = ask_val(w)
 	elif g != null:
 		var to: Vector2 = g - s.pos
 		want = to.angle()
@@ -178,6 +219,11 @@ func _engines(w: World) -> void:
 			"haven":
 				if m.step == 2:
 					stop_at = 120.0
+	var hint: Dictionary = m.bot_hint() if m != null else {}
+	if hint.has("stop"):
+		stop_at = float(hint.stop)
+	if bool(hint.get("slow", false)):
+		cruise *= 0.35
 	if g != null:
 		var to: Vector2 = g - s.pos
 		var d: float = to.length()
@@ -191,12 +237,12 @@ func _engines(w: World) -> void:
 			want = minf(want, maxf(0.0, d - stop_at) * 0.3)
 	elif stop_at >= 0.0:
 		want = 0.0
-	if stop_at >= 1e5:
+	if stop_at >= 1e5 or ask(w) == "stop":
 		want = 0.0
 	if w.feat("power") and s.overload > 35.0:
 		want = minf(want, top * 0.45)
-	var running: bool = (m != null and m.id == "pursuit") or not w.alive("patrol").is_empty()
-	var hunting: bool = m != null and m.id == "bigone" and m.step == 1
+	var running: bool = (m != null and m.id == "pursuit") or not w.alive("patrol").is_empty() or bool(hint.get("run", false))
+	var hunting: bool = (m != null and m.id == "bigone" and m.step == 1) or hint.has("behind")
 	if not running and not hunting and not threats(w).is_empty() and stop_at < 0.0:
 		want = minf(want, top * 0.45)
 	act(w, "throttle", snappedf(clampf(want / top, 0.0, 1.0), 0.05))
@@ -220,6 +266,10 @@ func _weapons(w: World) -> void:
 		var cp: Variant = m.pos_of("customs")
 		if cp != null:
 			dial(w, "aim", s.aim, K.wrap_pi((cp - s.pos).angle() - s.heading))
+		act(w, "fire", false)
+		return
+	if ask(w) == "gun":
+		dial(w, "aim", s.aim, ask_val(w))
 		act(w, "fire", false)
 		return
 	var cands: Array = []
@@ -263,6 +313,11 @@ func _sensors(w: World) -> void:
 	# customs asks for a scan
 	if ask(w) == "scan":
 		var ce: Dictionary = m.tagged("customs")
+		if ce.is_empty():
+			for any in w.ents:
+				if any.alive and any.kind != "ring" and any.ai != "thrown" and any.pos.distance_to(s.pos) < w.radar_range:
+					ce = any
+					break
 		if not ce.is_empty():
 			act(w, "select", int(ce.id))
 			act(w, "scan", true)
@@ -276,7 +331,7 @@ func _sensors(w: World) -> void:
 		if not want:
 			continue
 		var d: float = e.pos.distance_to(s.pos)
-		if d < World.RADAR_RANGE and d < bd:
+		if d < w.radar_range and d < bd:
 			bd = d
 			best = e
 	if best.is_empty():
@@ -291,6 +346,8 @@ func _shields(w: World) -> void:
 	var want: Variant = null
 	if ask(w) == "shield_back":
 		want = PI
+	elif ask(w) == "shield":
+		want = ask_val(w)
 	var soonest: float = 99.0
 	for i in w.incoming():
 		if i.eta < soonest:
@@ -341,6 +398,8 @@ func _engineer(w: World) -> void:
 			score = 10 + int(prio.get(id, 1))
 		elif float(st.hp) < 55.0:
 			score = int(prio.get(id, 1))
+		elif not w.glitch_in(id).is_empty():
+			score = 8
 		if score > best:
 			best = score
 			pick = id

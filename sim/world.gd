@@ -26,10 +26,15 @@ var scanning: bool = false
 var scan_prog: float = 0.0
 # comms (mission 5+)
 var comms_freq: float = 0.5
+var freq_touched: bool = false
 var hail: Dictionary = {}         # {from, text, freq, heard, lock_t, signal}
 # grabber shake-off
 var shake_t: float = 0.0
 var bump_cd: float = 0.0
+# glitches: the ship misbehaving (see Glitches)
+var glitches: Array = []          # {id, sys, station, t, ask, fix, ...}
+var radar_range: float = RADAR_RANGE
+var next_ghost: int = 900001
 
 func _init(seed_value: int = 0) -> void:
 	if seed_value != 0:
@@ -52,6 +57,7 @@ func clear() -> void:
 	scan_prog = 0.0
 	hail = {}
 	shake_t = 0.0
+	glitches.clear()
 
 func feat(f: String) -> bool:
 	return bool(features.get(f, false))
@@ -139,6 +145,7 @@ func step(dt: float) -> void:
 	_repairs(dt)
 	_power(dt)
 	_bumps(dt)
+	_glitch_tick(dt)
 	ents = ents.filter(func(e): return e.alive or false)
 	fx = fx.filter(func(f): return t - float(f.t) < 1.5)
 	if mission != null:
@@ -152,7 +159,9 @@ func _ship_physics(dt: float) -> void:
 		s.blackout_t = maxf(0.0, s.blackout_t - dt)
 		if s.blackout_t <= 0.0:
 			emit("power_back")
-	var steer: float = s.wheel * Ship.TURN_RATE * (1.0 if s.ok("bridge") else 0.35)
+	# the ship turns tighter when it's slow: Helm needs Engines to ease off for a sharp corner
+	var nimble: float = lerpf(1.3, 0.72, clampf(s.speed() / Ship.MAX_SPEED, 0.0, 1.0))
+	var steer: float = s.wheel * Ship.TURN_RATE * nimble * (1.0 if s.ok("bridge") else 0.35)
 	# one engine down: the other one shoves us round (Cosmoteer-style)
 	var pull: float = 0.0
 	if s.throttle > 0.05 and s.blackout_t <= 0.0:
@@ -171,7 +180,9 @@ func _ship_physics(dt: float) -> void:
 	s.heading = K.wrap_pi(s.heading + s.angvel * dt)
 	var n: float = float(s.engines_working()) / 2.0
 	var boost_k: float = 1.65 if (s.boost and feat("boost") and n > 0.0) else 1.0
-	var max_v: float = Ship.MAX_SPEED * n * s.power_factor("engines", features) * boost_k * (1.0 - 0.15 * latched)
+	var max_v: float = Ship.MAX_SPEED * s.mod("speed") * n * s.power_factor("engines", features) * boost_k * (1.0 - 0.15 * latched)
+	if has_glitch("engine_hiccup") and fmod(float(glitch("engine_hiccup").t), 4.5) < 1.3:
+		max_v *= 0.12
 	var target: Vector2 = s.fwd() * s.throttle * max_v
 	var rate: float = 0.9 if s.blackout_t <= 0.0 else 0.25
 	if s.blackout_t > 0.0:
@@ -193,6 +204,7 @@ func _heat(dt: float) -> void:
 			hot = (s.throttle - 0.72) * 85.0
 		if s.boost and feat("boost"):
 			hot += 22.0
+		hot *= s.mod("heat")
 	s.engine_heat = clampf(s.engine_heat + (hot - (14.0 if hot <= 0.0 else 0.0)) * dt, 0.0, 100.0)
 	if s.engine_heat >= 100.0:
 		var opts: Array = []
@@ -208,12 +220,12 @@ func _weapons(dt: float) -> void:
 	var s: Ship = ship
 	s.gun_cd = maxf(0.0, s.gun_cd - dt)
 	if s.firing and s.ok("gun") and s.gun_cd <= 0.0:
-		var dir: Vector2 = Vector2.from_angle(s.turret_world())
+		var dir: Vector2 = Vector2.from_angle(s.turret_world() + _gun_skew())
 		shots.append({"pos": s.pos + dir * 22.0, "vel": dir * BULLET_SPEED + s.vel * 0.5, "from": "us", "dmg": 10.0, "life": 1.4, "kind": "bullet"})
-		s.gun_cd = 0.3 / maxf(0.3, s.power_factor("weapons", features))
+		s.gun_cd = 0.3 / maxf(0.3, s.power_factor("weapons", features)) / s.mod("gun_rate")
 		stats.shots += 1
 		if feat("heat"):
-			s.gun_heat += 9.0
+			s.gun_heat += 9.0 * s.mod("gun_heat")
 			if s.gun_heat >= 100.0:
 				s.gun_heat = 45.0
 				s.firing = false
@@ -221,7 +233,7 @@ func _weapons(dt: float) -> void:
 		if feat("pudding"):
 			s.pud_mood -= 0.35
 	if s.torp == "loading":
-		s.torp_load += dt / 2.2
+		s.torp_load += dt / 2.2 * s.mod("torp_load")
 		if s.torp_load >= 1.0:
 			s.torp = "ready"
 			s.torp_load = 1.0
@@ -231,7 +243,7 @@ func fire_torpedo() -> bool:
 	var s: Ship = ship
 	if s.torp != "ready" or not s.ok("gun"):
 		return false
-	var dir: Vector2 = Vector2.from_angle(s.turret_world())
+	var dir: Vector2 = Vector2.from_angle(s.turret_world() + _gun_skew())
 	shots.append({"pos": s.pos + dir * 24.0, "vel": dir * 200.0 + s.vel * 0.5, "from": "us", "dmg": 45.0, "life": 4.0, "kind": "torpedo"})
 	s.torp = "empty"
 	s.torp_load = 0.0
@@ -511,7 +523,7 @@ func _tractor(dt: float) -> void:
 	if not feat("tractor") or not s.tractor_on or not s.ok("tractor"):
 		return
 	var best: Dictionary = {}
-	var bd: float = TRACTOR_RANGE
+	var bd: float = TRACTOR_RANGE * s.mod("tractor")
 	for e in ents:
 		if e.alive and e.tractor:
 			var d: float = e.pos.distance_to(s.pos)
@@ -534,13 +546,16 @@ func _scan(dt: float) -> void:
 	if not scanning or scan_target < 0:
 		scan_prog = maxf(0.0, scan_prog - dt)
 		return
+	if scan_target >= 900000:
+		_scan_ghost(dt)
+		return
 	var e: Dictionary = ent(scan_target)
 	if e.is_empty() or not e.alive:
 		scan_prog = 0.0
 		return
-	if not ship.ok("sensors") or e.pos.distance_to(ship.pos) > RADAR_RANGE:
+	if not ship.ok("sensors") or e.pos.distance_to(ship.pos) > radar_range:
 		return
-	scan_prog += dt / SCAN_TIME
+	scan_prog += dt / SCAN_TIME * ship.mod("scan")
 	if scan_prog >= 1.0:
 		scan_prog = 0.0
 		if not e.scanned:
@@ -641,9 +656,12 @@ func _repairs(dt: float) -> void:
 	var needs: bool = str(st.state) != "ok" or float(st.hp) < 100.0
 	if not needs:
 		s.repair_prog = 0.0
+		_fix_glitch(dt)
 		return
 	var fire: bool = str(st.state) == "fire"
-	s.repair_prog += dt / (Ship.FIRE_TIME if fire else (Ship.REPAIR_TIME if str(st.state) == "broken" else 1.5))
+	# a part mends twice as fast while nobody is using it: the Engineer has to ask for a breather
+	var k: float = (2.0 if (not fire and resting(s.repair_target)) else 1.0) * s.mod("repair")
+	s.repair_prog += dt * k / (Ship.FIRE_TIME if fire else (Ship.REPAIR_TIME if str(st.state) == "broken" else 1.5))
 	if s.repair_prog >= 1.0:
 		s.repair_prog = 0.0
 		if fire:
@@ -668,8 +686,8 @@ func _power(dt: float) -> void:
 		s.draw = 0.0
 		s.overload = 0.0
 		return
-	if s.draw > Ship.POWER_CAP + 0.01:
-		s.overload += (s.draw - Ship.POWER_CAP) * 16.0 * dt
+	if s.draw > s.power_cap + 0.01:
+		s.overload += (s.draw - s.power_cap) * 16.0 * dt
 	else:
 		s.overload -= 12.0 * dt
 	s.overload = clampf(s.overload, 0.0, 100.0)
@@ -683,13 +701,169 @@ func _power(dt: float) -> void:
 		if float(s.sys.reactor.hp) <= 0.0:
 			break_system("reactor", "blew its breaker", false)
 
+func resting(sysid: String) -> bool:
+	## is nobody leaning on this part right now?
+	var s: Ship = ship
+	match sysid:
+		"engine_p", "engine_s":
+			return s.throttle < 0.08
+		"gun":
+			return not s.firing and s.torp != "loading"
+		"sensors":
+			return not scanning
+		"tractor":
+			return not s.tractor_on
+		"bridge":
+			return absf(s.wheel) < 0.1
+		"reactor":
+			return feat("power") and s.draw < s.power_cap * 0.5
+	return false
+
+static func rest_tip(sysid: String) -> String:
+	match sysid:
+		"engine_p", "engine_s":
+			return "Twice as fast if Engines cuts the throttle to zero."
+		"gun":
+			return "Twice as fast while Weapons stops firing."
+		"sensors":
+			return "Twice as fast while Sensors stops scanning."
+		"tractor":
+			return "Twice as fast with the tractor beam off."
+		"bridge":
+			return "Twice as fast while Helm holds the wheel centred."
+		"reactor":
+			return "Twice as fast while the ship draws under half power."
+	return ""
+
+# ---------------------------------------------------------------- glitches
+
+func has_glitch(id: String) -> bool:
+	for g in glitches:
+		if str(g.id) == id:
+			return true
+	return false
+
+func glitch(id: String) -> Dictionary:
+	for g in glitches:
+		if str(g.id) == id:
+			return g
+	return {}
+
+func glitch_in(sysid: String) -> Dictionary:
+	for g in glitches:
+		if str(g.sys) == sysid:
+			return g
+	return {}
+
+func add_glitch(id: String) -> bool:
+	if not Glitches.can_have(self, id):
+		return false
+	var def: Dictionary = Glitches.DEFS[id]
+	var g: Dictionary = {"id": id, "sys": str(def.sys), "station": str(def.station), "t": 0.0, "fix": 0.0, "hinted": false,
+		"ask": Glitches.pick_ask(self, def)}
+	var side: float = -1.0 if rng.randf() < 0.5 else 1.0
+	match id:
+		"drunk_compass":
+			g["off"] = [PI / 2.0, -PI / 2.0, PI][rng.randi() % 3]
+		"shield_slip":
+			g["off"] = side * [PI / 3.0, PI / 2.0][rng.randi() % 2]
+		"gun_pull":
+			g["off"] = side * 0.24
+		"wheel_drift":
+			g["off"] = side
+		"radar_ghosts":
+			g["ghosts"] = []
+			g["spawn_t"] = 0.0
+	glitches.append(g)
+	stats["glitches"] = int(stats.get("glitches", 0)) + 1
+	emit("glitch", {"id": id, "sys": g.sys, "station": g.station, "name": def.name})
+	return true
+
+func remove_glitch(id: String, fixed: bool = true) -> void:
+	for g in glitches:
+		if str(g.id) == id:
+			glitches.erase(g)
+			if id == "radar_ghosts" and scan_target >= 900000:
+				scan_target = -1
+				scan_prog = 0.0
+			if fixed:
+				stats["glitches_fixed"] = int(stats.get("glitches_fixed", 0)) + 1
+				emit("glitch_fixed", {"id": id, "sys": g.sys, "station": g.station, "name": Glitches.DEFS[id].name, "t": g.t})
+			return
+
+func _gun_skew() -> float:
+	return float(glitch("gun_pull").get("off", 0.0)) if has_glitch("gun_pull") else 0.0
+
+func _fix_glitch(dt: float) -> void:
+	## the Engineer is holding REPAIR on a healthy room: if a glitch lives there, work through IGOR's manual
+	var g: Dictionary = glitch_in(ship.repair_target)
+	if g.is_empty():
+		return
+	if Glitches.ask_met(self, g):
+		g.fix = float(g.fix) + dt / Glitches.FIX_TIME * ship.mod("repair")
+		if float(g.fix) >= 1.0:
+			remove_glitch(str(g.id), true)
+	else:
+		g.fix = maxf(0.0, float(g.fix) - dt * 0.6)
+
+func _glitch_tick(dt: float) -> void:
+	var s: Ship = ship
+	for g in glitches.duplicate():
+		g.t = float(g.t) + dt
+		if not s.repairing or s.repair_target != str(g.sys):
+			g.fix = maxf(0.0, float(g.fix) - dt * 0.4)
+		if not bool(g.hinted) and float(g.t) > Glitches.HINT_AFTER:
+			g.hinted = true
+			emit("glitch_hint", {"id": g.id})
+		match str(g.id):
+			"sticky_throttle":
+				if s.throttle > 0.05:
+					s.throttle = minf(1.0, s.throttle + 0.07 * dt)
+			"wheel_drift":
+				s.wheel = clampf(s.wheel + float(g.off) * 0.11 * dt, -1.0, 1.0)
+			"igor_reboot":
+				if float(g.t) > 20.0:
+					remove_glitch("igor_reboot", true)
+			"pudding_sat":
+				s.firing = false
+				if s.petting or s.pud_out:
+					g.fix = float(g.fix) + dt / 2.0
+					if float(g.fix) >= 1.0 or s.pud_out:
+						remove_glitch("pudding_sat", true)
+			"radar_ghosts":
+				g.spawn_t = float(g.spawn_t) - dt
+				if float(g.spawn_t) <= 0.0 and (g.ghosts as Array).size() < 3:
+					g.spawn_t = 7.0
+					(g.ghosts as Array).append({"id": next_ghost, "a": rng.randf() * TAU, "d": rng.randf_range(160.0, radar_range * 0.85),
+						"spin": rng.randf_range(-0.05, 0.05)})
+					next_ghost += 1
+		# a room that breaks takes its glitch with it: one problem at a time per room
+		if s.broken(str(g.sys)) and str(g.id) != "igor_reboot":
+			remove_glitch(str(g.id), false)
+
+func _scan_ghost(dt: float) -> void:
+	var g: Dictionary = glitch("radar_ghosts")
+	var found: Dictionary = {}
+	for gh in g.get("ghosts", []):
+		if int(gh.id) == scan_target:
+			found = gh
+	if found.is_empty() or not ship.ok("sensors"):
+		scan_prog = 0.0
+		return
+	scan_prog += dt / SCAN_TIME
+	if scan_prog >= 1.0:
+		scan_prog = 0.0
+		scan_target = -1
+		(g.ghosts as Array).erase(found)
+		emit("ghost_scanned")
+
 # ---------------------------------------------------------------- forecasts (the captain's cues)
 
 func overload_eta() -> float:
 	var s: Ship = ship
-	if not feat("power") or s.draw <= Ship.POWER_CAP + 0.01:
+	if not feat("power") or s.draw <= s.power_cap + 0.01:
 		return -1.0
-	return (100.0 - s.overload) / maxf(0.01, (s.draw - Ship.POWER_CAP) * 16.0)
+	return (100.0 - s.overload) / maxf(0.01, (s.draw - s.power_cap) * 16.0)
 
 func engine_heat_eta() -> float:
 	var s: Ship = ship

@@ -1,0 +1,6 @@
+.git
+.godot
+export
+docs/screenshots
+.claude
+*.DS_Store

@@ -9,6 +9,12 @@ import random
 
 INK = "#1d1712"
 
+# "Line boil": redraw the same picture with a slightly different hand, so cycling the variants makes the ink
+# shimmer like a hand-drawn cartoon. make_art sets BOIL to 1, 2... and builds the art again.
+BOIL = 0
+# The mood a face is drawn in: "" (calm), "busy", "panic" or "cheer". Changes the eyes; chars.py adds the rest.
+MOOD = ""
+
 # ---------------------------------------------------------------- palette (vintage, warm, slightly faded)
 PAL = {
     "ink": INK, "paper": "#f2e2c0", "paper2": "#e3cd9f", "paper3": "#d4b985", "cream": "#fbf2dc", "white": "#fffaf0",
@@ -154,7 +160,7 @@ def wobble(pts, amp=1.4, closed=True, seed=1, waves=None):
     L = length(pts, closed)
     if waves is None:
         waves = max(2, int(L / 70))
-    nz = Noise1D(seed, 3, waves)
+    nz = Noise1D(seed + BOIL * 1013, 3, waves)
     nm = normals(pts, closed)
     out = []
     n = len(pts)
@@ -182,7 +188,7 @@ def brush_d(pts, closed, w, var=0.3, seed=1, taper=0.25):
     n = len(pts)
     if n < 2:
         return ""
-    nz = Noise1D(seed + 17, 2, 2)
+    nz = Noise1D(seed + 17 + BOIL * 577, 2, 2)
     nm = normals(pts, closed)
     left, right = [], []
     for i in range(n):
@@ -319,6 +325,17 @@ class Pen:
     def pie_eye(self, cx, cy, rx, ry, look=(0.0, 0.0), white=True, lid=0.0, wedge=0.0, pupil=0.62, w=None):
         """Rubber-hose pie eye: white oval, big black pupil with a pie-slice cut out. lid 0..1 closes it from the top."""
         w = (self.w * 0.8) if w is None else w
+        if MOOD == "panic":
+            # wide eyes, tiny pupils, looking up at the trouble
+            rx, ry, pupil, look, lid = rx * 1.14, ry * 1.16, 0.34, (look[0] * 0.3, -0.5), 0.0
+        elif MOOD == "busy":
+            # concentrating: half-lidded, eyes down on the work
+            lid, look = max(lid, 0.34), (look[0] * 0.4, 0.9)
+        elif MOOD == "cheer":
+            # eyes squeezed shut in a grin: a happy upward arc where each eye was
+            self.line([(cx - rx * 0.95, cy + ry * 0.3), (cx - rx * 0.4, cy - ry * 0.35), (cx, cy - ry * 0.5), (cx + rx * 0.4, cy - ry * 0.35),
+                       (cx + rx * 0.95, cy + ry * 0.3)], w=w * 1.5)
+            return ellipse(cx, cy, rx, ry, 48)
         if white:
             q = self.shape(ellipse(cx, cy, rx, ry, 48), "#fffaf0", w=w, wob=0.5)
         else:

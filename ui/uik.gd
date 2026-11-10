@@ -61,6 +61,20 @@ static func speaking() -> bool:
 		return false
 	return DisplayServer.tts_is_speaking()
 
+static func music(mood: String) -> void:
+	var s: Node = _sfx_node()
+	if s != null:
+		s.call("music", mood)
+
+static func set_music(on: bool) -> void:
+	var s: Node = _sfx_node()
+	if s != null:
+		s.call("set_music", on)
+
+static func music_on() -> bool:
+	var s: Node = _sfx_node()
+	return s != null and bool(s.get("music_on"))
+
 static func sound_on() -> bool:
 	var s: Node = _sfx_node()
 	return s != null and bool(s.get("enabled"))
@@ -69,6 +83,7 @@ static func set_sound(on: bool) -> void:
 	var s: Node = _sfx_node()
 	if s != null:
 		s.set("enabled", on)
+		s.call("_apply_music")
 
 static func voice_on() -> bool:
 	var s: Node = _sfx_node()
@@ -154,8 +169,10 @@ static func label(text: String, size: int = BODY, col: Color = Color(0, 0, 0, 0)
 	return l
 
 static func head(text: String, size: int = HEAD, col: Color = Color(0, 0, 0, 0), align: int = 0) -> Label:
+	## Luckiest Guy only looks right in capitals, so headings are always upper case
 	var l: Label = label(text, size, col, align)
 	l.add_theme_font_override("font", font("head"))
+	l.uppercase = true
 	return l
 
 static func title(text: String, size: int = 56, col: Color = Color(0, 0, 0, 0), align: int = 0) -> Label:
@@ -197,7 +214,7 @@ static func style_btn(b: Button, col: String) -> void:
 
 static func btn(text: String, col: String = "cream", cb: Callable = Callable(), icon_name: String = "", size: int = 22) -> Button:
 	var b: Button = Button.new()
-	b.text = text
+	b.text = text.to_upper()
 	b.focus_mode = Control.FOCUS_NONE
 	b.add_theme_font_override("font", font("head"))
 	b.add_theme_font_size_override("font_size", size)
@@ -361,8 +378,8 @@ static func pic(name: String, px: Vector2) -> TextureRect:
 	r.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return r
 
-static func portrait(name: String, px: int = 96) -> TextureRect:
-	return pic("portrait_" + name, Vector2(px, px))
+static func portrait(name: String, px: int = 96) -> Face:
+	return Face.new(name, px)
 
 static func speech(text: String, who_portrait: String, who: String = "", px: int = 96, size: int = 24) -> HBoxContainer:
 	## a character with a speech bubble

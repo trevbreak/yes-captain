@@ -1,0 +1,18 @@
+# Build and run on any machine with Docker:   docker compose up -d --build
+services:
+  yes-captain:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+    image: yes-captain:latest
+    container_name: yes-captain
+    restart: unless-stopped
+    ports:
+      - "8480:80"     # http  (play on your own network: http://<server>:8480)
+      - "8443:443"    # https (needed for voice chat, and for the public address)
+    environment:
+      PUBLIC_HOST: ""   # e.g. yescaptain.duckdns.org once the router forwards 80 and 443 here
+      LAN_IP: ""        # e.g. 192.168.1.50 to try voice chat at home (self-signed certificate)
+      MAX_ROOMS: "20"
+    volumes:
+      - ./data:/data    # certificates live here

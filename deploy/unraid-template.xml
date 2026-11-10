@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>yes-captain</Name>
+  <Repository>ghcr.io/trevbreak/yes-captain:latest</Repository>
+  <Registry>https://ghcr.io/trevbreak/yes-captain</Registry>
+  <Network>bridge</Network>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/trevbreak/yes-captain</Support>
+  <Project>https://github.com/trevbreak/yes-captain</Project>
+  <Overview>Yes, Captain! A bridge simulator for loud friends, played in the browser. One container: the game's web page and its server. Open the WebUI, start a crew room, send friends the link.</Overview>
+  <Category>GameServers:</Category>
+  <WebUI>http://[IP]:[PORT:80]/</WebUI>
+  <Icon>https://raw.githubusercontent.com/trevbreak/yes-captain/main/icon.svg</Icon>
+  <Config Name="Web (http)" Target="80" Default="8480" Mode="tcp" Description="The game over plain http. Fine on your own network. When PUBLIC_HOST is set, forward the router's port 80 here too (certificates need it)." Type="Port" Display="always" Required="true" Mask="false">8480</Config>
+  <Config Name="Web (https)" Target="443" Default="8443" Mode="tcp" Description="The game over https. Needed for voice chat and for the public address: forward the router's port 443 here." Type="Port" Display="always" Required="true" Mask="false">8443</Config>
+  <Config Name="Data" Target="/data" Default="/mnt/user/appdata/yes-captain" Mode="rw" Description="Where the https certificates are kept." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/yes-captain</Config>
+  <Config Name="PUBLIC_HOST" Target="PUBLIC_HOST" Default="" Mode="" Description="Your domain name (e.g. yescaptain.duckdns.org). Leave empty until the router forwards 80 and 443 to this container. With it set, the container fetches a real https certificate by itself." Type="Variable" Display="always" Required="false" Mask="false"></Config>
+  <Config Name="LAN_IP" Target="LAN_IP" Default="" Mode="" Description="Optional. This server's address on your network (e.g. 192.168.1.50). Adds https with a self-signed certificate at https://that-address:8443 so voice chat can be tried at home. Browsers will warn once." Type="Variable" Display="always" Required="false" Mask="false"></Config>
+  <Config Name="MAX_ROOMS" Target="MAX_ROOMS" Default="20" Mode="" Description="How many crew rooms may be open at once." Type="Variable" Display="advanced" Required="false" Mask="false">20</Config>
+  <Config Name="TURN_URL" Target="TURN_URL" Default="" Mode="" Description="Optional voice relay (e.g. turn:host:3478) for players whose routers block direct voice." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+  <Config Name="TURN_USER" Target="TURN_USER" Default="" Mode="" Description="Voice relay user name." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+  <Config Name="TURN_PASS" Target="TURN_PASS" Default="" Mode="" Description="Voice relay password." Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
+</Container>

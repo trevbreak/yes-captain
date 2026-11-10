@@ -87,11 +87,11 @@ static func check(root: Control) -> Array:
 		if n is Label:
 			var lb: Label = n
 			if lb.autowrap_mode == TextServer.AUTOWRAP_OFF and not lb.clip_text and lb.text_overrun_behavior == TextServer.OVERRUN_NO_TRIMMING:
-				var w: float = lb.get_theme_font("font").get_string_size(lb.text, HORIZONTAL_ALIGNMENT_LEFT, -1, lb.get_theme_font_size("font_size")).x
+				var w: float = lb.get_theme_font("font").get_string_size(lb.text.to_upper() if lb.uppercase else lb.text, HORIZONTAL_ALIGNMENT_LEFT, -1, lb.get_theme_font_size("font_size")).x
 				if w > r.size.x + 4.0 and not lb.text.contains("\n"):
 					issues.append("TEXT-OVERFLOW " + _desc(n))
 			elif lb.autowrap_mode == TextServer.AUTOWRAP_OFF and lb.clip_text and lb.text_overrun_behavior == TextServer.OVERRUN_NO_TRIMMING:
-				var w2: float = lb.get_theme_font("font").get_string_size(lb.text, HORIZONTAL_ALIGNMENT_LEFT, -1, lb.get_theme_font_size("font_size")).x
+				var w2: float = lb.get_theme_font("font").get_string_size(lb.text.to_upper() if lb.uppercase else lb.text, HORIZONTAL_ALIGNMENT_LEFT, -1, lb.get_theme_font_size("font_size")).x
 				if w2 > r.size.x + 4.0 and not lb.text.contains("\n"):
 					issues.append("TEXT-CLIPPED " + _desc(n))
 		if _interactive(n):
@@ -144,7 +144,7 @@ static func _text_rect(l: Label) -> Rect2:
 		return Rect2(r.position.x, top, r.size.x, h).grow(-2.0)
 	var f: Font = l.get_theme_font("font")
 	var fs: int = l.get_theme_font_size("font_size")
-	var w: float = minf(r.size.x, f.get_string_size(l.text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x)
+	var w: float = minf(r.size.x, f.get_string_size(l.text.to_upper() if l.uppercase else l.text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x)
 	var x: float = r.position.x
 	match l.horizontal_alignment:
 		HORIZONTAL_ALIGNMENT_CENTER:

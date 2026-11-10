@@ -131,14 +131,14 @@ func refresh(v: Dictionary, _com: Dictionary) -> void:
 		var sig: float = float(cm.signal)
 		sig_bar.set_value(sig, "LOCKED" if bool(cm.heard) else "%d%%" % int(sig * 100.0))
 		sig_bar.set_colour(UIK.c("green") if sig > 0.8 else UIK.c("teal"))
-		msg_lbl.text = ("\"%s\"" % str(cm.text)) if bool(cm.heard) else ("...crackle... " + "▮".repeat(int(sig * 10.0)))
+		msg_lbl.text = ("\"%s\"" % str(cm.text)) if bool(cm.heard) else ("...crackle... " + "#".repeat(int(sig * 10.0)))
 
 func on_key(k: Key, down: bool) -> bool:
 	match k:
 		KEY_SPACE:
 			scan_btn.press_key(down)
 			return true
-		KEY_TAB:
+		KEY_TAB, KEY_R:
 			if down:
 				_cycle()
 			return true

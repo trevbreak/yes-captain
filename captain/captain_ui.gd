@@ -19,6 +19,7 @@ var pud_bar: Gauges.Bar
 var crew_cells: Dictionary = {}
 var mission_rib: PanelContainer
 var _warn_sig: String = ""
+var _flip: bool = false
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -95,7 +96,7 @@ func _ready() -> void:
 		cell.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		cell.custom_minimum_size = Vector2(180, 0)
 		g.add_child(cell)
-		var pr: TextureRect = UIK.portrait(st, 40)
+		var pr: Face = UIK.portrait(st, 44)
 		cell.add_child(pr)
 		var cv: VBoxContainer = UIK.vbox(-4)
 		cv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -120,6 +121,13 @@ func apply(v: Dictionary, com: Dictionary) -> void:
 	var feats: Dictionary = com.get("features", {})
 	v["_t"] = float(com.get("t", 0.0))
 	chart.v = v
+	# the "chart's upside down" glitch really does turn the chart upside down, lettering and all
+	var flip: bool = bool(v.get("flip", false))
+	if flip != _flip:
+		_flip = flip
+		chart.pivot_offset = chart.size / 2.0
+		var tw: Tween = chart.create_tween()
+		tw.tween_property(chart, "rotation", PI if flip else 0.0, 0.5).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	# the mission
 	var steps: Array = v.get("steps", [])
 	var now: int = -1
@@ -154,21 +162,24 @@ func apply(v: Dictionary, com: Dictionary) -> void:
 	cut.pudding_room = str(bd.get("pud_room", "")) if bool(bd.get("pud_out", false)) else ""
 	cut.stuck = bd.get("stuck", [])
 	cut.blackout = bool(bd.get("blackout", false))
+	cut.glitch_rooms = bd.get("glitch_rooms", [])
 	var eh: float = float(bd.get("engine_heat", 0.0)) / 100.0
 	var gh: float = float(bd.get("gun_heat", 0.0)) / 100.0
 	cut.hot = {"engine_p": eh, "engine_s": eh, "gun": gh}
 	var hull: float = float(com.get("hull", 100.0))
 	hull_bar.set_value(hull / maxf(1.0, float(com.get("hull_max", 100.0))), "HULL %d%%" % int(hull))
 	heat_bar.visible = bool(feats.get("heat", false))
-	heat_bar.set_value(eh, "ENGINES %d%%" % int(eh * 100.0))
+	heat_bar.set_value(eh, "ENGINE HEAT %d%%" % int(eh * 100.0))
 	heat_bar.set_colour(UIK.c("red") if eh > 0.8 else UIK.c("orange"))
 	gun_bar.visible = bool(feats.get("heat", false))
-	gun_bar.set_value(gh, "GUN %d%%" % int(gh * 100.0))
+	gun_bar.set_value(gh, "GUN HEAT %d%%" % int(gh * 100.0))
 	gun_bar.set_colour(UIK.c("red") if gh > 0.8 else UIK.c("orange"))
 	power_bar.visible = bool(feats.get("power", false))
 	var dr: float = float(bd.get("draw", 0.0))
-	power_bar.set_value(dr / 9.0, "REACTOR %.1f/6" % dr)
-	power_bar.set_colour(UIK.c("red") if dr > 6.0 else UIK.c("mustard"))
+	var cap: float = float(bd.get("cap", 6.0))
+	power_bar.marker = cap / 9.0
+	power_bar.set_value(dr / 9.0, "POWER USED %.1f OF %d" % [dr, int(cap)])
+	power_bar.set_colour(UIK.c("red") if dr > cap else UIK.c("mustard"))
 	pud_bar.visible = bool(feats.get("pudding", false))
 	var pm: float = float(bd.get("pud_mood", 0.0))
 	pud_bar.set_value(pm / 100.0, "PUDDING LOOSE!" if bool(bd.get("pud_out", false)) else "PUDDING %d%%" % int(pm))
@@ -181,6 +192,7 @@ func apply(v: Dictionary, com: Dictionary) -> void:
 		(cell.line as Label).text = str(cl.get("text", ""))
 		(cell.line as Label).tooltip_text = (cell.line as Label).text
 		var al: int = int(cl.get("alert", 0))
+		(cell.pic as Face).set_mood("panic" if al >= 2 else ("busy" if al == 1 else ""))
 		var wl2: Label = cell.warn
 		wl2.text = str(cl.get("warn", ""))
 		wl2.add_theme_color_override("font_color", UIK.c("red") if al >= 2 else Color("#9a6a10"))
@@ -204,6 +216,7 @@ func _warn_row(w: Dictionary) -> Control:
 	if lvl >= 3:
 		l.add_theme_font_override("font", UIK.font("head"))
 		l.add_theme_font_size_override("font_size", 15)
+		l.uppercase = true
 	h.add_child(l)
 	var who: String = str(w.get("who", ""))
 	if who != "":
