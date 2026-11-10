@@ -22,6 +22,9 @@ fi
 {
 	echo '{'
 	echo '	admin off'
+	# never bounce http to https by ourselves: behind Docker the https port outside is not 443,
+	# so the redirect would land on something else (on Unraid, its own web page)
+	echo '	auto_https disable_redirects'
 	# browsers reaching us by bare IP send no server name: tell Caddy which certificate to offer them
 	[ -n "${LAN_IP:-}" ] && echo "	default_sni ${LAN_IP}"
 	echo '}'
