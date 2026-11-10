@@ -45,6 +45,7 @@ COPY deploy/entrypoint.sh /entrypoint.sh
 RUN rm -rf /app/export && chmod +x /entrypoint.sh && mkdir -p /data /config
 ENV PUBLIC_HOST="" \
     LAN_IP="" \
+    HTTPS_PORT="8443" \
     MAX_ROOMS="20" \
     TURN_URL="" TURN_USER="" TURN_PASS="" \
     XDG_DATA_HOME=/data XDG_CONFIG_HOME=/config HOME=/data

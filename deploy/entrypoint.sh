@@ -3,6 +3,7 @@
 #   PUBLIC_HOST  a domain name pointing at this server: Caddy fetches a real certificate (needs ports 80 + 443)
 #   LAN_IP       this server's address on your network: adds https with a self-signed certificate,
 #                so voice chat can be tried at home before the game is on the internet
+#   HTTPS_PORT   the port https is reachable on from outside the container (default 8443)
 #   MAX_ROOMS    how many crew rooms may be open at once (default 20)
 #   TURN_URL, TURN_USER, TURN_PASS   optional voice relay for players behind awkward routers
 set -u
@@ -12,11 +13,15 @@ CADDYFILE=/config/Caddyfile
 mkdir -p /config /data /tmp/captain
 chown captain /tmp/captain
 
-# what the page needs to know (voice relay)
+# what the page needs to know: the voice relay, and where https lives.
+# Browsers only run the game on https (or localhost), so a visitor on plain http is sent across.
 if [ -n "${TURN_URL:-}" ]; then
 	printf 'window.YC_ICE = [{ urls: "%s", username: "%s", credential: "%s" }];\n' "$TURN_URL" "${TURN_USER:-}" "${TURN_PASS:-}" > "$WEB/config.js"
 else
 	echo 'window.YC_ICE = [];' > "$WEB/config.js"
+fi
+if [ -n "${PUBLIC_HOST:-}" ] || [ -n "${LAN_IP:-}" ]; then
+	echo "window.YC_HTTPS_PORT = \"${HTTPS_PORT:-8443}\"; window.YC_PUBLIC_HOST = \"${PUBLIC_HOST:-}\";" >> "$WEB/config.js"
 fi
 
 {

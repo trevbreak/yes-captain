@@ -37,12 +37,38 @@ $GODOT_HEAD_INCLUDE
 		<div id="status-notice"></div>
 	</div>
 </div>
+<script src="config.js"></script>
+<script>
+// Browsers only run the game in a "secure context": https, or localhost. On plain http, go to the https door.
+window.YC_BLOCKED = false;
+if (!window.isSecureContext) {
+	window.YC_BLOCKED = true;
+	var target = '';
+	if (window.YC_PUBLIC_HOST) { target = 'https://' + window.YC_PUBLIC_HOST + location.pathname + location.search; }
+	else if (window.YC_HTTPS_PORT) { target = 'https://' + location.hostname + ':' + window.YC_HTTPS_PORT + location.pathname + location.search; }
+	document.addEventListener('DOMContentLoaded', function () {
+		var q = document.getElementById('quip');
+		var n = document.getElementById('status-notice');
+		document.getElementById('bar').style.display = 'none';
+		n.style.display = 'block';
+		if (target) {
+			q.innerHTML = '<b>IGOR:</b> Wrong door. Browsers insist on the https one. IGOR is taking you there.';
+			n.innerHTML = 'Going to <a href="' + target + '">' + target + '</a>. If the browser warns about the certificate on a home network, choose Advanced, then Proceed.';
+			setTimeout(function () { location.replace(target); }, 2500);
+		} else {
+			q.innerHTML = '<b>IGOR:</b> Browsers only run this game over https. This server has none set up.';
+			n.textContent = 'Set LAN_IP (for home use) or PUBLIC_HOST (for a domain) on the container, then use the https address.';
+		}
+	});
+}
+</script>
 <script src="$GODOT_URL"></script>
 <script>
 const GODOT_CONFIG = $GODOT_CONFIG;
 const GODOT_THREADS_ENABLED = $GODOT_THREADS_ENABLED;
 const engine = new Engine(GODOT_CONFIG);
 (function () {
+	if (window.YC_BLOCKED) { return; }
 	const overlay = document.getElementById('status');
 	const fill = document.getElementById('fill');
 	const quip = document.getElementById('quip');
@@ -81,7 +107,6 @@ const engine = new Engine(GODOT_CONFIG);
 	}).then(() => { clearInterval(timer); overlay.remove(); }, fail);
 }());
 </script>
-<script src="config.js"></script>
 <script src="voice.js"></script>
 </body>
 </html>
