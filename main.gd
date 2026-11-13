@@ -56,6 +56,8 @@ func _ready() -> void:
 		_leave()
 		menu.show_msg(r))
 	_apply_args()
+	# the title screen has its music too (browsers hold it back until the first click; then it starts)
+	UIK.music("menu")
 
 func _process(delta: float) -> void:
 	Voice.poll(delta)

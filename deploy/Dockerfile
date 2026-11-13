@@ -45,6 +45,7 @@ COPY deploy/entrypoint.sh /entrypoint.sh
 RUN rm -rf /app/export && chmod +x /entrypoint.sh && mkdir -p /data /config
 ENV PUBLIC_HOST="" \
     LAN_IP="" \
+    TLS_HOST="" TLS_CERT="/certs/certificate_bundle.pem" \
     HTTPS_PORT="8443" \
     MAX_ROOMS="20" \
     TURN_URL="" TURN_USER="" TURN_PASS="" \

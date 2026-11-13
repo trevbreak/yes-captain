@@ -39,13 +39,26 @@ $GODOT_HEAD_INCLUDE
 </div>
 <script src="config.js"></script>
 <script>
-// Browsers only run the game in a "secure context": https, or localhost. On plain http, go to the https door.
+// Browsers only run the game in a "secure context": https, or localhost. And the game's live connection
+// only works where the browser fully trusts the certificate. So every visitor is sent to the server's
+// home address (YC_HOME, set by the container) when there is one, and from plain http to https anyway.
 window.YC_BLOCKED = false;
-if (!window.isSecureContext) {
-	window.YC_BLOCKED = true;
+(function () {
+	var home = window.YC_HOME || '';
 	var target = '';
-	if (window.YC_PUBLIC_HOST) { target = 'https://' + window.YC_PUBLIC_HOST + location.pathname + location.search; }
-	else if (window.YC_HTTPS_PORT) { target = 'https://' + location.hostname + ':' + window.YC_HTTPS_PORT + location.pathname + location.search; }
+	var local = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+	if (home && location.origin !== home && !local) {
+		target = home + location.pathname + location.search;
+	} else if (!window.isSecureContext && window.YC_HTTPS_PORT) {
+		target = 'https://' + location.hostname + ':' + window.YC_HTTPS_PORT + location.pathname + location.search;
+	}
+	if (!target && window.isSecureContext) { return; }
+	window.YC_BLOCKED = true;
+	if (target && window.isSecureContext) {
+		// already on https, just the wrong name: go straight there
+		location.replace(target);
+		return;
+	}
 	document.addEventListener('DOMContentLoaded', function () {
 		var q = document.getElementById('quip');
 		var n = document.getElementById('status-notice');
@@ -53,14 +66,14 @@ if (!window.isSecureContext) {
 		n.style.display = 'block';
 		if (target) {
 			q.innerHTML = '<b>IGOR:</b> Wrong door. Browsers insist on the https one. IGOR is taking you there.';
-			n.innerHTML = 'Going to <a href="' + target + '">' + target + '</a>. If the browser warns about the certificate on a home network, choose Advanced, then Proceed.';
-			setTimeout(function () { location.replace(target); }, 2500);
+			n.innerHTML = 'Going to <a href="' + target + '">' + target + '</a>.';
+			setTimeout(function () { location.replace(target); }, 1500);
 		} else {
 			q.innerHTML = '<b>IGOR:</b> Browsers only run this game over https. This server has none set up.';
-			n.textContent = 'Set LAN_IP (for home use) or PUBLIC_HOST (for a domain) on the container, then use the https address.';
+			n.textContent = 'Set TLS_HOST, LAN_IP or PUBLIC_HOST on the container, then use the https address.';
 		}
 	});
-}
+}());
 </script>
 <script src="$GODOT_URL"></script>
 <script>
