@@ -421,7 +421,7 @@ func _ai_patrol(e: Dictionary, dt: float) -> void:
 	if e.charge > 0.0:
 		e.charge = float(e.charge) - dt
 		if e.charge <= 0.0:
-			e.cd = rng.randf_range(5.0, 6.5)
+			e.cd = rng.randf_range(9.0, 12.0) if e.get("lazy", false) else rng.randf_range(5.0, 6.5)
 			for k in [-0.18, 0.0, 0.18]:
 				shoot_at_ship(e.pos, 170.0, 9.0, "blob", k)
 

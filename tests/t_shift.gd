@@ -36,6 +36,8 @@ func _init() -> void:
 	# ---- a brand-new online crew: assumed trained, so every kind of job can be dealt
 	var fresh: GameHost = GameHost.new()
 	fresh.career = Progress.new()
+	fresh.career.full_deck = true
+	_check(fails, Deck.cards(fresh.career).size() == Deck.ORDER.size(), "an online crew holds the whole deck from the start")
 	_check(fails, Jobs.open_tasks(Deck.features_for(fresh.career)).size() == Jobs.TASKS.size(), "a new crew can be dealt every kind of job")
 	var dealt_kinds: Dictionary = {}
 	var orng: RandomNumberGenerator = RandomNumberGenerator.new()

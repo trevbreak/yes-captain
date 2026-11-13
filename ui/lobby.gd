@@ -16,6 +16,7 @@ var train_box: Control
 var shift_box: VBoxContainer
 var shift_info: Label
 var shift_cards: Label
+var shift_blurb: Label
 var shift_lock: Label
 var skip_btn: Button
 var igor_lbl: Label
@@ -98,7 +99,8 @@ func _ready() -> void:
 	shift_box.visible = false
 	cwb.add_child(shift_box)
 	shift_box.add_child(UIK.head("THREE JOBS. MAKE THE RENT.", 22, UIK.c("purple").darkened(0.2)))
-	shift_box.add_child(UIK.para("Jobs are dealt from your deck: a task, a place and a snag or two. The ship glitches as you go. Pick from the job board, fly it, get paid. Every finished shift adds one new card.", 18))
+	shift_blurb = UIK.para("", 18)
+	shift_box.add_child(shift_blurb)
 	shift_info = UIK.para("", 20)
 	shift_box.add_child(shift_info)
 	shift_cards = UIK.para("", 17, K.pal("ink_soft"))
@@ -230,7 +232,12 @@ func update_lobby(d: Dictionary) -> void:
 	shift_box.visible = mode == "shift"
 	shift_info.text = "Rent due: £%d\nShifts flown: %d     Best takings: £%d" % [int(sh.get("rent", 0)), int(sh.get("shifts", 0)), int(sh.get("best", 0))]
 	var latest: Array = sh.get("latest", [])
-	shift_cards.text = "Your deck: %d of %d cards.\nNewest: %s" % [int(sh.get("cards", 0)), int(sh.get("of", 0)), ", ".join(PackedStringArray(latest))]
+	if bool(sh.get("full", false)):
+		shift_blurb.text = "Every job is dealt at random: a task, a place and a snag or two, from everything in the game. The ship glitches as you go. Pick from the job board, fly it, get paid. The board has an easy job, a middling one and a spicy one."
+		shift_cards.text = "The whole deck: %d glitches, %d places, %d snags. No two shifts alike." % [Glitches.DEFS.size(), Deck.PLACES.size(), Deck.TWISTS.size()]
+	else:
+		shift_blurb.text = "Jobs are dealt from your deck: a task, a place and a snag or two. The ship glitches as you go. Pick from the job board, fly it, get paid. Every finished shift adds one new card."
+		shift_cards.text = "Your deck: %d of %d cards.\nNewest: %s" % [int(sh.get("cards", 0)), int(sh.get("of", 0)), ", ".join(PackedStringArray(latest))]
 	shift_lock.text = "" if bool(sh.get("open", false)) else "Fly %d training missions to open the Shift." % int(sh.get("needs", 2))
 	igor_lbl.text = str(d.get("igor", ""))
 	var seats: Dictionary = d.get("seats", {})

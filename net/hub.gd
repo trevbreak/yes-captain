@@ -127,8 +127,9 @@ func _create(peer: int, rname: String, career: Variant) -> void:
 	var h: GameHost = GameHost.new()
 	h.career = Progress.new()
 	h.career.apply_dict(career)
+	h.career.full_deck = true
 	h.room_code = code
-	# online crews start on the Shift: dealt jobs, never the same twice. Training is the other tab.
+	# online crews start on the Shift with the whole deck: dealt jobs, never the same twice. Training is the other tab.
 	h.shift_always = true
 	h.mode = "shift"
 	rname = clean_name(rname)

@@ -362,6 +362,11 @@ func _layoutcheck() -> void:
 	# the Shift: crew room tab, job board (with parts), a job briefing with its extra page, both pay slips
 	await _shift_to_board()
 	await _check("crewroom_shift")
+	# an online crew's version: the whole deck, so the board below deals from everything too
+	Net.host.career.full_deck = true
+	Net.host._send_lobby()
+	await _wait(0.3)
+	await _check("crewroom_online")
 	Net.send("start")
 	await _wait(0.6)
 	Net.send("vote", {"i": 0})

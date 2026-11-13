@@ -8,6 +8,7 @@ const SHIFT_UNLOCKS_AT: int = 3     # the Shift opens once this many missions ar
 const BASE_CARDS: int = 5
 const JOBS_PER_SHIFT: int = 3
 
+## Online crews hold the whole deck from the start (Progress.full_deck); solo and LAN crews grow it a card a shift.
 ## the order cards arrive in. kind: glitch | place | twist. needs: mechanics the career must have taught first.
 const ORDER: Array = [
 	{"kind": "glitch", "id": "backwards_wheel"},
@@ -51,15 +52,15 @@ const PLACES: Dictionary = {
 }
 
 const TWISTS: Dictionary = {
-	"rush": {"name": "Rush order", "text": "The clock is a third shorter. The pay is better.", "pay": 0.25},
-	"dented": {"name": "Second-hand ship", "text": "The last crew left dents. Hull starts at 65%.", "pay": 0.2},
-	"one_engine": {"name": "Starboard engine is in bits", "text": "It starts broken. The ship pulls right until the Engineer mends it.", "pay": 0.15},
-	"fragile": {"name": "Fragile cargo", "text": "Every bump and every hit comes out of the pay.", "pay": 0.3},
-	"glitchy": {"name": "Friday-afternoon ship", "text": "Glitches arrive twice as often.", "pay": 0.3},
-	"grumpy": {"name": "Pudding is in a mood", "text": "Pudding starts unhappy and gets unhappier. Somebody keep petting.", "pay": 0.2},
-	"blind": {"name": "Sensor dish fell off", "text": "Sensors start broken. The chart is all question marks until it's mended.", "pay": 0.15},
-	"weak_reactor": {"name": "Reactor is wheezing", "text": "Only 5 bars of power instead of 6.", "pay": 0.25},
-	"thrupp": {"name": "Thrupp is watching", "text": "A Hegemony patrol follows you the whole way. It can't be shot.", "pay": 0.4},
+	"rush": {"name": "Rush order", "text": "The clock is a third shorter. The pay is better.", "pay": 0.25, "danger": 1},
+	"dented": {"name": "Second-hand ship", "text": "The last crew left dents. Hull starts at 65%.", "pay": 0.2, "danger": 1},
+	"one_engine": {"name": "Starboard engine is in bits", "text": "It starts broken. The ship pulls right until the Engineer mends it.", "pay": 0.15, "danger": 1},
+	"fragile": {"name": "Fragile cargo", "text": "Every bump and every hit comes out of the pay.", "pay": 0.3, "danger": 1},
+	"glitchy": {"name": "Friday-afternoon ship", "text": "Glitches arrive twice as often.", "pay": 0.3, "danger": 2},
+	"grumpy": {"name": "Pudding is in a mood", "text": "Pudding starts unhappy and gets unhappier. Somebody keep petting.", "pay": 0.2, "danger": 1},
+	"blind": {"name": "Sensor dish fell off", "text": "Sensors start broken. The chart is all question marks until it's mended.", "pay": 0.15, "danger": 1},
+	"weak_reactor": {"name": "Reactor is wheezing", "text": "Only 5 bars of power instead of 6.", "pay": 0.25, "danger": 1},
+	"thrupp": {"name": "Thrupp is watching", "text": "A Hegemony patrol follows you the whole way. It can't be shot.", "pay": 0.4, "danger": 2},
 }
 
 ## IGOR found a part: bodged upgrades offered between jobs. Each has a catch.
@@ -96,6 +97,8 @@ static func cards(career: Progress, upto_shifts: int = -1) -> Array:
 	## the cards this crew holds: the base hand plus one per finished shift
 	var feats: Dictionary = features_for(career)
 	var n: int = BASE_CARDS + (career.shifts if upto_shifts < 0 else upto_shifts)
+	if career.full_deck:
+		n = ORDER.size()
 	var out: Array = []
 	for c in ORDER:
 		if out.size() >= n:
@@ -136,7 +139,8 @@ static func describe(card: Dictionary) -> Dictionary:
 
 static func rent(career: Progress) -> int:
 	## what the depot wants from a shift. It creeps up as the crew gets better at this.
-	return 330 + mini(career.shifts, 20) * 12
+	## A crew with the whole deck is dealt richer jobs (more snags pay more), so its rent starts higher.
+	return (420 if career.full_deck else 330) + mini(career.shifts, 20) * 12
 
 static func part_offers(rng: RandomNumberGenerator, feats: Dictionary, have: Array) -> Array:
 	var pool: Array = []

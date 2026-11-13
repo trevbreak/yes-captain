@@ -29,6 +29,7 @@ godot_import
 SEEDS_N=3; [ "$MODE" = "quick" ] && SEEDS_N=1
 SEEDS=$SEEDS_N run "robot crews beat all 10 missions"  "$GODOT" --headless --path . --script tests/t_missions.gd
 SEEDS=$SEEDS_N run "robot crews fly dealt jobs (the Shift)" "$GODOT" --headless --path . --script tests/t_jobs.gd
+run "online dealer: budget, variety, robots"   "$GODOT" --headless --path . --script tests/t_deal.gd
 run "a whole shift, and the glitch plumbing"  "$GODOT" --headless --path . --script tests/t_shift.gd
 [ -z "$NONET" ] && run "server: rooms, secrecy, limits, rubbish"  "$GODOT" --headless --path . --script tests/t_hub.gd
 run "UI smoke: every seat in a mission"     "$GODOT" --headless --path . scenes/main.tscn -- --solo --autotest=haven --warm=1 --wait=0.3 --tail=0.5

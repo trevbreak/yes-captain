@@ -60,6 +60,22 @@ static func open_tasks(feats: Dictionary) -> Array:
 			out.append(id)
 	return out
 
+## the board's three jobs: easy, middling, spicy. Each one is dealt at random from the crew's deck, but its
+## task, place and snags have to fit inside that tier's danger budget, so the dice never stack the Minefield,
+## Thrupp and a Friday-afternoon ship onto one job.
+const TIERS: Array = [
+	{"budget": 3, "snags": 1},
+	{"budget": 5, "snags": 1},
+	{"budget": 7, "snags": 2},
+]
+
+static func load_of(task: String, place: String, twists: Array) -> int:
+	## how much trouble a job is: the task, plus the place, plus each snag
+	var n: int = int(TASKS[task].danger) + int(Deck.PLACES[place].danger)
+	for x in twists:
+		n += int(Deck.TWISTS[x].get("danger", 1))
+	return n
+
 static func offers(rng: RandomNumberGenerator, career: Progress, avoid: Array = []) -> Array:
 	## three job cards: an easy one, a middling one and a spicy one
 	var feats: Dictionary = Deck.features_for(career)
@@ -71,23 +87,50 @@ static func offers(rng: RandomNumberGenerator, career: Progress, avoid: Array = 
 	var places: Array = ["open"] + Deck.ids(career, "place")
 	var twists: Array = Deck.ids(career, "twist")
 	var out: Array = []
-	for i in mini(3, tasks.size()):
-		var tid: String = tasks[i]
+	var used: Array = []
+	for i in mini(TIERS.size(), tasks.size()):
+		var tier: Dictionary = TIERS[i]
+		var budget: int = int(tier.budget)
+		# the first task that fits this tier (the easy job gets an easy task)
+		var tid: String = ""
+		for cand in tasks:
+			if not (cand in used) and int(TASKS[cand].danger) <= (2 if i == 0 else budget - 1):
+				tid = cand
+				break
+		if tid == "":
+			for cand in tasks:
+				if not (cand in used):
+					tid = cand
+					break
+		used.append(tid)
 		var t: Dictionary = TASKS[tid]
-		var place: String = "open" if (i == 0 and rng.randf() < 0.7) else str(places[rng.randi() % places.size()])
-		if tid == "storm" and place == "shower":
-			place = "open"
+		var left: int = budget - int(t.danger)
+		# the place: the easy job is usually in open lanes
+		var place: String = "open"
+		if not (i == 0 and rng.randf() < 0.35):
+			var fit: Array = places.filter(func(pl): return int(Deck.PLACES[pl].danger) <= left - int(tier.snags) / 2 \
+				and not (tid == "storm" and pl == "shower"))
+			if not fit.is_empty():
+				place = str(fit[rng.randi() % fit.size()])
+		left -= int(Deck.PLACES[place].danger)
+		# the snags, while there is budget for them
 		var tw: Array = []
 		var pool: Array = twists.duplicate()
 		_shuffle(rng, pool)
-		for k in mini(i, pool.size()):
-			if str(pool[k]) == "one_engine" and tid == "pursuit":
+		for x in pool:
+			if tw.size() >= int(tier.snags):
+				break
+			if i == 0 and rng.randf() < 0.5:
+				break      # the easy job only has a snag half the time
+			var cost: int = int(Deck.TWISTS[x].get("danger", 1))
+			if cost > left or (x == "one_engine" and tid == "pursuit"):
 				continue
-			tw.append(pool[k])
+			tw.append(x)
+			left -= cost
 		var mult: float = 1.0 + 0.15 * float(Deck.PLACES[place].danger)
 		for x in tw:
 			mult += float(Deck.TWISTS[x].pay)
-		var danger: int = clampi(int(t.danger) + int(Deck.PLACES[place].danger) + tw.size(), 1, 5)
+		var danger: int = clampi(load_of(tid, place, tw) - 1, 1, 5)
 		out.append({"task": tid, "place": place, "twists": tw, "seed": rng.randi(), "title": str(t.titles[rng.randi() % t.titles.size()]),
 			"pay": int(round(float(t.pay) * mult / 5.0)) * 5, "danger": danger, "client": str(t.client), "blurb": str(t.blurb)})
 	out.sort_custom(func(a, b): return int(a.danger) < int(b.danger))
@@ -541,7 +584,7 @@ class Job extends Mission:
 			w.ship.pud_mood = maxf(0.0, w.ship.pud_mood - 0.9 * dt)
 		if has("thrupp") and count("thrupp_in") == 0 and t > 8.0:
 			counters["thrupp_in"] = 1
-			w.spawn("patrol", ahead(-460), {"ai": "patrol", "speed": 44.0, "tag": "patrol"})
+			w.spawn("patrol", ahead(-460), {"ai": "patrol", "speed": 44.0, "tag": "patrol", "lazy": true})   # watching, mostly: fires half as often
 			w.emit("story", {"who": "thrupp", "text": "Thrupp here. I shall be following you today. For the paperwork. And the gloating."})
 
 	func on_event(type: String, d: Dictionary) -> void:

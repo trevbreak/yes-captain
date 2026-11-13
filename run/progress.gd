@@ -14,6 +14,7 @@ var shifts: int = 0             # finished shifts: each one adds a card to the d
 var best_pay: int = 0
 var stickers: Dictionary = {}   # award title -> times earned
 var is_local: bool = false
+var full_deck: bool = false      # online crews: every glitch, place and snag from the first shift (not saved)
 
 static func local() -> Progress:
 	## this player's own career

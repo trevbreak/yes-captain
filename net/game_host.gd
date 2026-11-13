@@ -242,7 +242,7 @@ func lobby_dict() -> Dictionary:
 	return {"t": "lobby", "seats": seats, "peers": pl, "mission": mission_id, "missions": missions, "phase": phase, "admin": admin,
 		"room": {"name": room_name, "code": room_code}, "voice": voice, "problem": prob, "mode": mode,
 		"shift": {"open": shift_open(), "rent": Deck.rent(career), "shifts": career.shifts, "best": career.best_pay,
-			"cards": held.size(), "of": Deck.ORDER.size(), "latest": names, "needs": Deck.SHIFT_UNLOCKS_AT - 1},
+			"cards": held.size(), "of": Deck.ORDER.size(), "latest": names, "full": career.full_deck, "needs": Deck.SHIFT_UNLOCKS_AT - 1},
 		"igor": lobby_line}
 
 func shift_open() -> bool:
