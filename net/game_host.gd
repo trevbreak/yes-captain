@@ -36,6 +36,7 @@ var room_name: String = ""          # set by the Hub on a server
 var room_code: String = ""
 var voice: bool = false             # the crew is remote: microphones on
 var mode: String = "career"         # "career" (training missions) or "shift" (three dealt jobs)
+var shift_always: bool = false      # online rooms: the Shift is open from the start (and is what they start on)
 var shift: Dictionary = {}          # the shift in progress: jobs done, money earned, parts fitted
 var lobby_line: String = "IGOR is counting the crew. IGOR keeps getting a low number."
 var rng: RandomNumberGenerator = RandomNumberGenerator.new()
@@ -240,9 +241,13 @@ func lobby_dict() -> Dictionary:
 		names.append(str(Deck.describe(c).title))
 	return {"t": "lobby", "seats": seats, "peers": pl, "mission": mission_id, "missions": missions, "phase": phase, "admin": admin,
 		"room": {"name": room_name, "code": room_code}, "voice": voice, "problem": prob, "mode": mode,
-		"shift": {"open": Deck.shift_open(career), "rent": Deck.rent(career), "shifts": career.shifts, "best": career.best_pay,
+		"shift": {"open": shift_open(), "rent": Deck.rent(career), "shifts": career.shifts, "best": career.best_pay,
 			"cards": held.size(), "of": Deck.ORDER.size(), "latest": names, "needs": Deck.SHIFT_UNLOCKS_AT - 1},
 		"igor": lobby_line}
+
+func shift_open() -> bool:
+	## solo and LAN crews earn the Shift with two training missions; online rooms have it from the start
+	return shift_always or Deck.shift_open(career)
 
 func _send_lobby() -> void:
 	_event(0, lobby_dict())
@@ -262,7 +267,7 @@ func set_option(key: String, val: Variant) -> void:
 				mission_id = str(val)
 				mode = "career"
 		"mode":
-			if str(val) == "shift" and Deck.shift_open(career):
+			if str(val) == "shift" and shift_open():
 				mode = "shift"
 			elif str(val) == "career":
 				mode = "career"
@@ -286,7 +291,7 @@ func set_option(key: String, val: Variant) -> void:
 func start_game(sd: int = 0) -> void:
 	seed_value = sd
 	rng.seed = sd if sd != 0 else int(Time.get_ticks_usec()) ^ int(randi())
-	if mode == "shift" and Deck.shift_open(career):
+	if mode == "shift" and shift_open():
 		_shift_start()
 	else:
 		shift = {}
@@ -462,7 +467,7 @@ func _finish(ok: bool) -> void:
 		debrief["next"] = next_id if (ok and next_id != "" and career.is_unlocked(next_id)) else ""
 		debrief["opened"] = opened
 		debrief["final"] = ok and next_id == ""
-		debrief["shift_opened"] = opened and career.unlocked() == Deck.SHIFT_UNLOCKS_AT
+		debrief["shift_opened"] = opened and career.unlocked() == Deck.SHIFT_UNLOCKS_AT and not shift_always
 		debrief["said"] = Igor.line("mission_done" if ok else "mission_failed", _names())
 		career.add_stickers(titles)
 		_event(0, {"t": "igor", "text": str(debrief.said), "prio": 3, "who": "igor", "speak": true})

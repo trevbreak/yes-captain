@@ -89,6 +89,11 @@ func _process(delta: float) -> bool:
 				for m in la.get("missions", []):
 					unlocked += int(bool(m.unlocked))
 				check(unlocked == 4, "the host's career came along (%d missions open)" % unlocked)
+				var lb: Dictionary = last("B", "lobby")
+				check(str(la.get("mode", "")) == "shift" and str(lb.get("mode", "")) == "shift", "online rooms start on the Shift")
+				check(bool(lb.get("shift", {}).get("open", false)), "the Shift is open even for a brand-new crew")
+				# room A goes back to Training, to test the career flow below
+				nets["A"].send("opt", {"key": "mode", "val": "career"})
 				check((last("C", "rooms").rooms as Array).size() == 2, "the depot shows both rooms to the others")
 				nets["D"].send("create", {"name": "Third"})
 				nets["C"].send("join", {"code": "ZZZZ"})
@@ -145,7 +150,8 @@ func _process(delta: float) -> bool:
 				t = 0.0
 		7:
 			if t > 5.5:
-				check(hub().rooms[code_a].host.phase == "mission" and hub().rooms[code_b].host.phase == "briefing", "two rooms run side by side")
+				check(hub().rooms[code_a].host.phase == "mission" and hub().rooms[code_b].host.phase == "board", "two rooms run side by side (A flying, B at its job board)")
+				check((hub().rooms[code_b].host.shift.get("offers", []) as Array).size() == 3, "a brand-new crew gets three jobs on the board")
 				check(count("A", "rtc") == 0 and count("C", "rtc") == 0, "voice handshakes can't cross rooms or run with voice off")
 				nets["C"].send("active", {"seat": "helm"})
 				nets["C"].intent("helm", "wheel", 0.5)

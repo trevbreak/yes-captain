@@ -128,6 +128,9 @@ func _create(peer: int, rname: String, career: Variant) -> void:
 	h.career = Progress.new()
 	h.career.apply_dict(career)
 	h.room_code = code
+	# online crews start on the Shift: dealt jobs, never the same twice. Training is the other tab.
+	h.shift_always = true
+	h.mode = "shift"
 	rname = clean_name(rname)
 	h.room_name = rname if rname != "Crew" else "%s's crew" % str(peer_name[peer])
 	h.admin = 0

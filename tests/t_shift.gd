@@ -33,6 +33,25 @@ func _init() -> void:
 	_check(fails, h.phase == "lobby", "the shift ends back in the crew room")
 	_check(fails, h.career.shifts == 1, "the shift was counted")
 	_check(fails, Deck.cards(h.career).size() == cards_before + 1 and card_title != "", "the crew earned a new card (%s)" % card_title)
+	# ---- a brand-new online crew: the Shift with nothing taught yet
+	var fresh: GameHost = GameHost.new()
+	fresh.career = Progress.new()
+	fresh.shift_always = true
+	fresh.mode = "shift"
+	fresh.start_game(91)
+	var debriefs: int = 0
+	var lp: String = ""
+	var t2: float = 0.0
+	while t2 < 1500.0 and not (fresh.phase == "lobby" and t2 > 1.0):
+		fresh.sim_step(K.DT)
+		t2 += K.DT
+		if fresh.phase != lp:
+			lp = fresh.phase
+			if fresh.phase == "debrief":
+				debriefs += 1
+				print("  new crew job %d: %-22s ok=%s pay=%d" % [int(fresh.debrief.n), fresh.debrief.title, fresh.debrief.ok, int(fresh.debrief.pay)])
+	_check(fails, debriefs == 3 and fresh.phase == "lobby" and fresh.career.shifts == 1, "a brand-new crew can fly a whole shift")
+	fresh.free()
 	# ---- glitches
 	var w: World = World.new(5)
 	var m: Mission = Missions.make("haven")
