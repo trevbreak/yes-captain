@@ -123,7 +123,7 @@ static func offers(rng: RandomNumberGenerator, career: Progress, avoid: Array = 
 			if i == 0 and rng.randf() < 0.5:
 				break      # the easy job only has a snag half the time
 			var cost: int = int(Deck.TWISTS[x].get("danger", 1))
-			if cost > left or (x == "one_engine" and tid == "pursuit"):
+			if cost > left or (tid == "pursuit" and x in ["one_engine", "thrupp"]):   # a chase already has Thrupp
 				continue
 			tw.append(x)
 			left -= cost
