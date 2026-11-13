@@ -1,6 +1,6 @@
 class_name Deck
 extends RefCounted
-## What a crew's Shifts are dealt from. The career teaches the mechanics; after that every finished shift adds
+## What a crew's Shifts are dealt from. Every mechanic and every kind of job is in from the start; every finished shift adds
 ## ONE new card (a glitch, a place or a twist), introduced by IGOR at the next briefing. A crew twenty shifts in
 ## plays a much wilder game than a new one, and nobody was ever handed more than one new thing at a time.
 
@@ -74,13 +74,10 @@ const PARTS: Array = [
 	{"id": "fast_torps", "name": "Spring-Loaded Torpedoes", "good": "torpedoes load twice as fast", "bad": "gun heats up faster", "mods": {"torp_load": 2.0, "gun_heat": 1.3}, "needs": ["torpedo"]},
 ]
 
-static func features_for(career: Progress) -> Dictionary:
-	## the mechanics this crew has been taught (missions flown, not just unlocked)
-	var flown: int = 0
-	for id in Missions.ORDER:
-		if career.stars(id) > 0:
-			flown = int(Missions.INFO[id].num)
-	return Missions.features_upto(maxi(flown, career.unlocked() - 1))
+static func features_for(_career: Progress) -> Dictionary:
+	## a crew on the Shift is assumed to have done basic training: every mechanic, every kind of job.
+	## (Training is where the mechanics are taught one at a time; the Shift doesn't hold any of them back.)
+	return Missions.features_upto(Missions.ORDER.size())
 
 static func shift_open(career: Progress) -> bool:
 	return career.unlocked() >= SHIFT_UNLOCKS_AT

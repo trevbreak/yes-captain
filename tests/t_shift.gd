@@ -33,9 +33,17 @@ func _init() -> void:
 	_check(fails, h.phase == "lobby", "the shift ends back in the crew room")
 	_check(fails, h.career.shifts == 1, "the shift was counted")
 	_check(fails, Deck.cards(h.career).size() == cards_before + 1 and card_title != "", "the crew earned a new card (%s)" % card_title)
-	# ---- a brand-new online crew: the Shift with nothing taught yet
+	# ---- a brand-new online crew: assumed trained, so every kind of job can be dealt
 	var fresh: GameHost = GameHost.new()
 	fresh.career = Progress.new()
+	_check(fails, Jobs.open_tasks(Deck.features_for(fresh.career)).size() == Jobs.TASKS.size(), "a new crew can be dealt every kind of job")
+	var dealt_kinds: Dictionary = {}
+	var orng: RandomNumberGenerator = RandomNumberGenerator.new()
+	orng.seed = 5
+	for i in 30:
+		for o in Jobs.offers(orng, fresh.career):
+			dealt_kinds[o.task] = true
+	_check(fails, dealt_kinds.size() == Jobs.TASKS.size(), "the job board deals all %d kinds of job to a new crew (saw %d)" % [Jobs.TASKS.size(), dealt_kinds.size()])
 	fresh.shift_always = true
 	fresh.mode = "shift"
 	fresh.start_game(91)
