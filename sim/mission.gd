@@ -15,6 +15,7 @@ var narrator: String = "igor"
 var par: float = 180.0
 var steps: Array = []
 var step: int = 0
+var done_at: Array = []         # where the ship was as each step was finished (the captain's route flags)
 var step_t: float = 0.0
 var t: float = 0.0
 var done: bool = false
@@ -83,6 +84,7 @@ func tick(_world: World, dt: float) -> void:
 	var st: Dictionary = steps[step]
 	if bool(st.check.call()):
 		w.emit("step_done", {"n": step, "text": st.text})
+		done_at.append(w.ship.pos)
 		step += 1
 		if step >= steps.size():
 			done = true
@@ -176,8 +178,21 @@ func goal_pos() -> Variant:
 func step_list() -> Array:
 	var out: Array = []
 	for i in steps.size():
-		out.append({"text": steps[i].text, "done": i < step or done, "now": i == step and not done})
+		var d: Dictionary = {"text": steps[i].text, "done": i < step or done, "now": i == step and not done}
+		var p: Variant = done_at[i] if i < done_at.size() else _step_goal(i)
+		if p is Vector2:
+			d["pos"] = [snappedf(p.x, 0.1), snappedf(p.y, 0.1)]
+		out.append(d)
 	return out
+
+func _step_goal(i: int) -> Variant:
+	## where a step's goal is, when it has one and the thing it points at exists yet
+	if i < 0 or i >= steps.size():
+		return null
+	var g: Variant = steps[i].get("goal", Callable())
+	if g is Callable and (g as Callable).is_valid():
+		return (g as Callable).call()
+	return null
 
 func stars() -> int:
 	if not done:

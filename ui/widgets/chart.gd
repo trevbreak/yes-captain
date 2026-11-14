@@ -5,6 +5,7 @@ extends Control
 ## so the captain can call "incoming at 4 o'clock!".
 
 var v: Dictionary = {}
+var big: bool = false            # the captain's viewscreen: route flags and trouble pinned as chips
 var view_r: float = 520.0
 var _tex: Dictionary = {}
 var _seen_fx: Dictionary = {}
@@ -100,7 +101,7 @@ func _draw() -> void:
 		var inside: bool = r.grow(-30.0).has_point(gp)
 		var gpe: Vector2 = gp if inside else _edge(c, gp, r.grow(-34.0))
 		_dashed(c, gpe, UIK.c("red"), 3.0, 14.0)
-		if inside:
+		if inside and not (big and _has_route()):
 			_flag(gp)
 		else:
 			var dir: Vector2 = (gp - c).normalized()
@@ -151,7 +152,10 @@ func _draw() -> void:
 				pass
 			elif (kind not in ["junk", "rock"] or not bool(e.get("thrown", false))) and p.distance_to(c) > 95.0:
 				# skip names close to our ship: the clock face lives there
-				_label(p + Vector2(-sz.x / 2.0, sz.y / 2.0 + 15.0), nm, UIK.c("red") if bool(e.hostile) else UIK.ink())
+				if big and bool(e.hostile):
+					_chip(p + Vector2(sz.x / 2.0 + 6.0, -12.0), ("%s · CHARGING!" % nm) if float(e.get("charge", 0.0)) > 0.0 else nm, UIK.c("red"))
+				else:
+					_label(p + Vector2(-sz.x / 2.0, sz.y / 2.0 + 15.0), nm, UIK.c("red") if bool(e.hostile) else UIK.ink())
 	# shots
 	for s in v.get("shots", []):
 		var p2: Vector2 = to_s.call(_vec(s.pos))
@@ -183,6 +187,8 @@ func _draw() -> void:
 				draw_texture_rect(_t("fx_star"), Rect2(p3 - Vector2(24, 24), Vector2(48, 48)), false, Color(1, 1, 1, fade))
 			"star":
 				draw_texture_rect(_t("fx_star"), Rect2(p3 - Vector2(30, 30), Vector2(60, 60)), false, Color(1, 1, 1, fade))
+	if big:
+		_route(to_s, r, c)
 	# our ship: shield arc, the ship, its turret
 	var shield: float = hd + float(ship.get("shield", 0.0))
 	if bool(ship.get("shield_ok", true)):
@@ -275,3 +281,67 @@ func _compass(c: Vector2) -> void:
 	var f: Font = UIK.font("head")
 	draw_string_outline(f, c + Vector2(-7, -s / 2.0 + 2.0), "N", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, 6, Color("#e9dcbb"))
 	draw_string(f, c + Vector2(-7, -s / 2.0 + 2.0), "N", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, UIK.c("red"))
+
+func _has_route() -> bool:
+	for st in v.get("steps", []):
+		if bool(st.get("now", false)) and st.has("pos"):
+			return true
+	return false
+
+func _route(to_s: Callable, r: Rect2, c: Vector2) -> void:
+	## the mission as numbered flags along the way: done ones ticked, the one to do now big and red, the rest waiting
+	var steps: Array = v.get("steps", [])
+	var f: Font = UIK.font("head")
+	var prev: Vector2 = c
+	var tnow: float = Time.get_ticks_msec() / 1000.0
+	var now_i: int = -1
+	for i in steps.size():
+		if bool(steps[i].get("now", false)):
+			now_i = i
+	for i in steps.size():
+		var st: Dictionary = steps[i]
+		if not st.has("pos"):
+			continue
+		var p: Vector2 = to_s.call(_vec(st.pos))
+		var done: bool = bool(st.get("done", false))
+		var now: bool = i == now_i
+		if i > now_i and now_i >= 0:
+			_dashed(prev, p, Color(UIK.ink(), 0.35), 2.5, 9.0)
+		if i >= now_i:
+			prev = p
+		if not r.grow(-16.0).has_point(p):
+			continue
+		var col: Color = UIK.c("green") if done else (UIK.c("red") if now else K.pal("cream"))
+		var rad: float = 17.0 if now else 14.0
+		if now:
+			draw_arc(p, rad + 9.0 + 3.0 * sin(tnow * 4.0), 0.0, TAU, 32, Color(UIK.c("red"), 0.45), 4.0, true)
+		draw_circle(p, rad + 2.5, UIK.ink())
+		draw_circle(p, rad, Color(col, 0.75) if done else col)
+		if done:
+			draw_polyline(PackedVector2Array([p + Vector2(-7, 0), p + Vector2(-2, 6), p + Vector2(8, -6)]), Color.WHITE, 3.5, true)
+		else:
+			var n: String = str(i + 1)
+			var nw: float = f.get_string_size(n, HORIZONTAL_ALIGNMENT_LEFT, -1, 20).x
+			draw_string(f, p + Vector2(-nw / 2.0, 8), n, HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color.WHITE if now else UIK.ink())
+		if now or i == now_i + 1:
+			var txt: String = str(st.text)
+			if txt.length() > 34:
+				txt = txt.left(33) + "…"
+			_chip(p + Vector2(rad + 8.0, -13.0), txt.to_upper() if now else txt.to_upper(), K.pal("cream"), 18 if now else 14, 1.0 if now else 0.8)
+
+func _chip(p: Vector2, text: String, bg: Color, sz: int = 15, alpha: float = 1.0) -> void:
+	## a little inked label stuck on the chart; flips to the left of `p` if it would run off the edge
+	var f: Font = UIK.font("head")
+	var w: float = f.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, sz).x + 16.0
+	var h: float = sz + 10.0
+	var at: Vector2 = p
+	if at.x + w > size.x - 8.0:
+		at.x = p.x - w - 40.0
+	at.x = clampf(at.x, 8.0, maxf(8.0, size.x - w - 8.0))
+	at.y = clampf(at.y, 8.0, maxf(8.0, size.y - h - 8.0))
+	var box: Rect2 = Rect2(at, Vector2(w, h))
+	draw_rect(Rect2(box.position + Vector2(3, 3), box.size), Color(UIK.ink(), alpha))
+	draw_rect(box, Color(bg, alpha))
+	draw_rect(box, Color(UIK.ink(), alpha), false, 2.5)
+	var fc: Color = UIK.text_on(bg)
+	draw_string(f, at + Vector2(8, sz + 2.0), text, HORIZONTAL_ALIGNMENT_LEFT, -1, sz, Color(fc, alpha))

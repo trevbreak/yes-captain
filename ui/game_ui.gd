@@ -19,6 +19,8 @@ var board_ui: Screens.JobBoard
 var content: Control
 var stations: Dictionary = {}
 var cap_ui: CaptainUI
+var top_bar: HBoxContainer
+var dock_bar: HBoxContainer
 var dock_seats: HBoxContainer
 var igor_pic: Face
 var igor_who: Label
@@ -46,6 +48,7 @@ func _ready() -> void:
 	var top: HBoxContainer = UIK.hbox(12)
 	top.custom_minimum_size = Vector2(0, TOP_H)
 	root.add_child(top)
+	top_bar = top
 	top_pic = UIK.portrait("captain", 56)
 	top.add_child(top_pic)
 	var tv: VBoxContainer = UIK.vbox(-6)
@@ -86,6 +89,7 @@ func _ready() -> void:
 	root.add_child(content)
 	cap_ui = CaptainUI.new()
 	cap_ui.visible = false
+	cap_ui.menu_pressed.connect(_toggle_pause)
 	content.add_child(cap_ui)
 	for st in K.STATIONS:
 		var ui: Station = _make_station(st)
@@ -96,6 +100,7 @@ func _ready() -> void:
 	var dock: HBoxContainer = UIK.hbox(10)
 	dock.custom_minimum_size = Vector2(0, DOCK_H)
 	root.add_child(dock)
+	dock_bar = dock
 	dock_seats = UIK.hbox(6)
 	dock_seats.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	dock.add_child(dock_seats)
@@ -278,6 +283,9 @@ func on_snapshot(d: Dictionary) -> void:
 	if view_seat != _active:
 		_active = view_seat
 		cap_ui.visible = view_seat == "captain"
+		# the captain's bridge is the whole screen: its own title plaque, IGOR on the viewscreen, no dock
+		top_bar.visible = view_seat != "captain"
+		dock_bar.visible = view_seat != "captain"
 		for st in stations.keys():
 			stations[st].visible = st == view_seat
 			if st != view_seat:
@@ -291,6 +299,7 @@ func on_snapshot(d: Dictionary) -> void:
 	if sig != _seats_sig:
 		_seats_sig = sig
 		_build_dock(seats, act)
+	cap_ui.set_seats(seats, act)
 	var mi: Dictionary = com.get("mission", {})
 	var sh: Dictionary = com.get("shift", {})
 	pay_chip.visible = not sh.is_empty()
@@ -370,6 +379,7 @@ func on_event(d: Dictionary) -> void:
 			igor_text.text = ("" if who == "igor" else igor_who.text + ": ") + str(d.get("text", ""))
 			_igor_t = 0.0
 			igor_text.tooltip_text = igor_text.text
+			cap_ui.say(who, str(d.get("text", "")), int(d.get("prio", 1)))
 			if bool(d.get("speak", false)) and _phase == "mission":
 				UIK.speak(igor_text.text)
 		"toast":
@@ -408,6 +418,8 @@ func on_event(d: Dictionary) -> void:
 
 func toast(text: String, kind: String = "info", _who: String = "") -> void:
 	var col: String = {"bad": "red", "good": "green", "step": "mustard", "info": "cream"}.get(kind, "cream")
+	if _active == "captain":
+		cap_ui.toast(text, col)
 	if text.length() > 34:
 		text = text.left(33) + "…"
 	UIK.set_chip(toast_chip, text, col)

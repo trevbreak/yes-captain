@@ -175,7 +175,27 @@ static func captain(w: World) -> Dictionary:
 			"stuck": _stuck(w), "glitch_rooms": Glitches.rooms(w)},
 		"crew": crew_lines(w),
 		"warnings": forecasts(w),
+		"inst": instruments(w),
 	}
+
+static func instruments(w: World) -> Dictionary:
+	## what each crew member knows that the chart doesn't show: the captain's console read-outs
+	var s: Ship = w.ship
+	var unknown: int = 0
+	for e in w.ents:
+		if e.alive and not e.scanned and e.ai != "thrown":
+			unknown += 1
+	var odd: Array = []
+	for g in w.glitches:
+		if float(g.t) > 5.0 and not (str(g.station) in odd):
+			odd.append(str(g.station))
+	return {"wheel": snappedf(s.wheel, 0.01), "throttle": snappedf(s.throttle, 0.01), "speed": int(s.speed()), "boost": s.boost,
+		"engines_ok": s.engines_working(), "torp": s.torp, "torp_load": snappedf(s.torp_load, 0.01), "firing": s.firing, "gun_ok": s.ok("gun"),
+		"scan": snappedf(w.scan_prog, 0.01) if w.scanning and w.scan_target >= 0 else -1.0, "unknown": unknown, "sensors_ok": s.ok("sensors"),
+		"hail": -1.0 if w.hail.is_empty() else (1.0 if bool(w.hail.get("heard", false)) else snappedf(float(w.hail.get("signal", 0.0)), 0.01)),
+		"shield_ok": s.ok("shield"), "shield_power": int(s.power.get("shields", 2)), "blocked": int(w.stats.get("blocked", 0)),
+		"hits": int(w.stats.get("hits_taken", 0)), "fixing": s.repair_target if s.repairing else "", "fix": snappedf(s.repair_prog, 0.01),
+		"odd": odd}
 
 static func _stuck(w: World) -> Array:
 	var out: Array = []
