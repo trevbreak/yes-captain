@@ -62,6 +62,7 @@ var repair_prog: float = 0.0
 
 # power (mission 8+): bars per group, 0..3, the reactor supplies POWER_CAP
 const POWER_CAP: float = 6.0
+var power_cap: float = POWER_CAP
 var power: Dictionary = {"engines": 2, "weapons": 2, "shields": 2}
 var draw: float = 0.0
 var overload: float = 0.0       # 0..100: blackout at 100
@@ -81,6 +82,12 @@ var tin_prog: float = 0.0
 # tractor (mission 2+)
 var tractor_on: bool = false
 var tractor_target: int = -1
+
+# bodged upgrades from the Shift: name -> multiplier (see mod())
+var mods: Dictionary = {}
+
+func mod(k: String) -> float:
+	return float(mods.get(k, 1.0))
 
 func _init() -> void:
 	for s in SYSTEMS:
@@ -159,7 +166,7 @@ func shield_covers(world_dir: float) -> bool:
 	if not ok("shield"):
 		return false
 	var rel: float = K.wrap_pi(world_dir - heading)
-	return absf(K.wrap_pi(rel - shield_dir)) <= SHIELD_HALF_ARC
+	return absf(K.wrap_pi(rel - shield_dir)) <= SHIELD_HALF_ARC * mod("shield_arc")
 
 func side_system(rel: float) -> String:
 	## the system closest to a hit from relative angle rel

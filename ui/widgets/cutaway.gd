@@ -18,6 +18,7 @@ var repairing: bool = false
 var pudding_room: String = ""
 var stuck: Array = []          # grabber relative angles
 var hot: Dictionary = {}       # room -> 0..1 heat
+var glitch_rooms: Array = []   # rooms where something is glitching
 var blackout: bool = false
 var clickable: bool = false
 var features: Dictionary = {}
@@ -93,6 +94,25 @@ func _stamp(c: Vector2, text: String, col: Color, rot: float, fs: int) -> void:
 	draw_string(f, Vector2(-ts.x / 2.0, ts.y * 0.32), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, col)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
+func _glitch_mark(rr: Rect2, t: float) -> void:
+	## a jittery "?!" and a few sparks: something in this room has stopped behaving
+	var f: Font = UIK.font("head")
+	var small: bool = rr.size.x < 90.0
+	var fs: int = int(clampf(minf(rr.size.x, rr.size.y) * (0.55 if small else 0.42), 14.0, 40.0))
+	var jit: Vector2 = Vector2(sin(t * 31.0) * 2.0, cos(t * 27.0) * 2.0)
+	var c: Vector2 = rr.get_center() + jit
+	draw_rect(rr.grow(-2.0), Color(UIK.c("purple"), 0.16 + 0.1 * sin(t * 9.0)))
+	var ts: Vector2 = f.get_string_size("?!", HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
+	var p: Vector2 = c + Vector2(-ts.x / 2.0, ts.y * 0.3)
+	draw_string_outline(f, p, "?!", HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 7, UIK.ink())
+	draw_string(f, p, "?!", HORIZONTAL_ALIGNMENT_LEFT, -1, fs, UIK.c("yellow"))
+	for i in 3:
+		var a: float = t * 5.0 + i * 2.1
+		var sp: Vector2 = rr.get_center() + Vector2(cos(a), sin(a * 1.3)) * minf(rr.size.x, rr.size.y) * 0.38
+		if int(t * 9.0 + i) % 3 == 0:
+			draw_line(sp - Vector2(4, 0), sp + Vector2(4, 0), UIK.c("yellow"), 2.5)
+			draw_line(sp - Vector2(0, 4), sp + Vector2(0, 4), UIK.c("yellow"), 2.5)
+
 func _compact(rr: Rect2, state: String, st: Dictionary, id: String) -> void:
 	## small ship board (the captain's): icons that always fit inside the room
 	var c: Vector2 = rr.get_center()
@@ -155,6 +175,8 @@ func _draw() -> void:
 				draw_rect(Rect2(c.x - w / 2.0, c.y + 4.0, w, 9.0), Color(UIK.ink(), 0.3))
 				draw_rect(Rect2(c.x - w / 2.0, c.y + 4.0, w * hp / 100.0, 9.0), UIK.c("mustard"))
 				draw_rect(Rect2(c.x - w / 2.0, c.y + 4.0, w, 9.0), UIK.ink(), false, 2.0)
+		if id in glitch_rooms and state == "ok":
+			_glitch_mark(rr, t)
 		if id == pudding_room:
 			var ps: float = minf(rr.size.x, rr.size.y) * 0.62
 			var bob: float = sin(t * 6.0) * 4.0

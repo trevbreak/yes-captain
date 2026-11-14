@@ -28,15 +28,21 @@ run() {
 godot_import
 SEEDS_N=3; [ "$MODE" = "quick" ] && SEEDS_N=1
 SEEDS=$SEEDS_N run "robot crews beat all 10 missions"  "$GODOT" --headless --path . --script tests/t_missions.gd
+SEEDS=$SEEDS_N run "robot crews fly dealt jobs (the Shift)" "$GODOT" --headless --path . --script tests/t_jobs.gd
+run "online dealer: budget, variety, robots"   "$GODOT" --headless --path . --script tests/t_deal.gd
+run "IGOR's voice service"                      "$GODOT" --headless --path . --script tests/t_tts.gd
+run "a whole shift, and the glitch plumbing"  "$GODOT" --headless --path . --script tests/t_shift.gd
+[ -z "$NONET" ] && run "server: rooms, secrecy, limits, rubbish"  "$GODOT" --headless --path . --script tests/t_hub.gd
 run "UI smoke: every seat in a mission"     "$GODOT" --headless --path . scenes/main.tscn -- --solo --autotest=haven --warm=1 --wait=0.3 --tail=0.5
 run "UI smoke: poke every control"          "$GODOT" --headless --path . scenes/main.tscn -- --solo --autotest=haven --exercise --warm=1 --wait=0.3
 # layout QA needs a real window (headless has no viewport size); skip with NOWINDOW=1 on CI
 if [ -z "$NOWINDOW" ]; then
-  for RES in 1024x768 1280x720 1920x1080; do
+  for RES in 1024x768 1280x720 1280x620 1920x1080; do
     run "layout check: every screen @ $RES"  "$GODOT" --path . --resolution $RES scenes/main.tscn -- --layoutcheck
   done
 fi
 
+if [ -z "$NONET" ]; then
 # networking: dedicated headless host + a separate client process
 printf "%-46s " "network: host + remote client"
 "$GODOT" --headless --path . --script tests/t_net_server.gd >"$LOG/net_server.log" 2>&1 &
@@ -46,6 +52,8 @@ sleep 2
 CODE=$?
 wait $SERVER 2>/dev/null
 if [ $CODE -eq 0 ] && grep -q "CLIENT PASS" "$LOG/net_client.log"; then echo "PASS"; else echo "FAIL"; tail -8 "$LOG/net_client.log"; FAILED=1; fi
+
+fi
 
 echo
 if [ $FAILED -eq 0 ]; then echo "ALL TESTS PASSED"; else echo "SOME TESTS FAILED (logs in $LOG)"; fi

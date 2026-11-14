@@ -8,17 +8,21 @@ signal leave_pressed
 const TOP_H: int = 58
 const DOCK_H: int = 70
 
-var top_pic: TextureRect
+var top_pic: Face
 var top_role: Label
 var top_persona: Label
 var top_mission: Label
 var top_time: Label
 var hull_chip: PanelContainer
+var pay_chip: PanelContainer
+var board_ui: Screens.JobBoard
 var content: Control
 var stations: Dictionary = {}
 var cap_ui: CaptainUI
+var top_bar: HBoxContainer
+var dock_bar: HBoxContainer
 var dock_seats: HBoxContainer
-var igor_pic: TextureRect
+var igor_pic: Face
 var igor_who: Label
 var igor_text: Label
 var toast_chip: PanelContainer
@@ -31,6 +35,7 @@ var _seats_sig: String = ""
 var _phase: String = ""
 var _debrief_sig: String = ""
 var _igor_t: float = 0.0
+var _cheer_t: float = 0.0
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -43,6 +48,7 @@ func _ready() -> void:
 	var top: HBoxContainer = UIK.hbox(12)
 	top.custom_minimum_size = Vector2(0, TOP_H)
 	root.add_child(top)
+	top_bar = top
 	top_pic = UIK.portrait("captain", 56)
 	top.add_child(top_pic)
 	var tv: VBoxContainer = UIK.vbox(-6)
@@ -63,6 +69,13 @@ func _ready() -> void:
 	top_time = UIK.label("", 21, K.pal("ink_soft"))
 	mh.add_child(top_time)
 	top.add_child(UIK.spacer(true))
+	top.add_child(Voice.Bar.new())
+	pay_chip = UIK.chip("", "green", "star", 18)
+	pay_chip.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	pay_chip.visible = false
+	pay_chip.tooltip_text = "This shift: money earned so far, and the rent the depot wants"
+	pay_chip.mouse_filter = Control.MOUSE_FILTER_PASS
+	top.add_child(pay_chip)
 	hull_chip = UIK.chip("HULL 100%", "red", "heart", 20)
 	hull_chip.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	top.add_child(hull_chip)
@@ -76,6 +89,7 @@ func _ready() -> void:
 	root.add_child(content)
 	cap_ui = CaptainUI.new()
 	cap_ui.visible = false
+	cap_ui.menu_pressed.connect(_toggle_pause)
 	content.add_child(cap_ui)
 	for st in K.STATIONS:
 		var ui: Station = _make_station(st)
@@ -86,6 +100,7 @@ func _ready() -> void:
 	var dock: HBoxContainer = UIK.hbox(10)
 	dock.custom_minimum_size = Vector2(0, DOCK_H)
 	root.add_child(dock)
+	dock_bar = dock
 	dock_seats = UIK.hbox(6)
 	dock_seats.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	dock.add_child(dock_seats)
@@ -96,15 +111,18 @@ func _ready() -> void:
 	ib.add_child(ih)
 	igor_pic = UIK.portrait("igor", 46)
 	ih.add_child(igor_pic)
-	var iv: VBoxContainer = UIK.vbox(-6)
+	var iv: VBoxContainer = UIK.vbox(0)
 	iv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	iv.alignment = BoxContainer.ALIGNMENT_CENTER
 	ih.add_child(iv)
 	igor_who = UIK.head("IGOR", 16, UIK.c("red"))
+	igor_who.visible = false
 	iv.add_child(igor_who)
-	igor_text = UIK.label("IGOR is watching. IGOR is always watching.", 21)
-	igor_text.clip_text = true
+	igor_text = UIK.para("IGOR is watching. IGOR is always watching.", 18)
+	igor_text.max_lines_visible = 2
 	igor_text.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	igor_text.add_theme_constant_override("line_spacing", -7)
+	igor_text.custom_minimum_size = Vector2(200, 50)
 	igor_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	iv.add_child(igor_text)
 	# the latest news sits in a fixed slot at the end of the dock, so it never covers a control
@@ -117,6 +135,10 @@ func _ready() -> void:
 	briefing_ui.z_index = 20
 	briefing_ui.visible = false
 	add_child(briefing_ui)
+	board_ui = Screens.JobBoard.new()
+	board_ui.z_index = 20
+	board_ui.visible = false
+	add_child(board_ui)
 	_build_pause()
 	Net.snapshot.connect(on_snapshot)
 	Net.event.connect(on_event)
@@ -160,6 +182,9 @@ func _build_pause() -> void:
 	var voice: Button = UIK.toggle("IGOR's voice", "green", func(on: bool): UIK.set_voice(on), "robot")
 	voice.button_pressed = UIK.voice_on()
 	b.add_child(voice)
+	var mus: Button = UIK.toggle("Music", "green", func(on: bool): UIK.set_music(on), "speaker")
+	mus.button_pressed = UIK.music_on()
+	b.add_child(mus)
 	var grain: Button = UIK.toggle("Film grain", "green", func(on: bool): UIK.set_grain(on), "eye")
 	grain.button_pressed = Film.enabled
 	b.add_child(grain)
@@ -167,6 +192,12 @@ func _build_pause() -> void:
 	b.add_child(UIK.btn("Leave the game", "red", func():
 		pause_panel.visible = false
 		leave_pressed.emit(), "back"))
+
+func _process(dt: float) -> void:
+	# IGOR's face settles back down a few seconds after he's said his piece
+	_igor_t += dt
+	if _igor_t > 4.5 and igor_pic.mood != "":
+		igor_pic.set_mood("", false)
 
 func _toggle_pause() -> void:
 	pause_panel.visible = not pause_panel.visible
@@ -176,15 +207,36 @@ func _unhandled_input(e: InputEvent) -> void:
 		return
 	if e is InputEventKey and e.pressed and not e.echo:
 		var k: Key = (e as InputEventKey).physical_keycode
-		if k == KEY_ESCAPE:
+		if k == KEY_ESCAPE or k == KEY_QUOTELEFT:
 			_toggle_pause()
 			get_viewport().set_input_as_handled()
 			return
 		var mine: Array = Net.last_snapshot.get("seats", [])
+		if k == KEY_F and mine.size() > 1:
+			_flip()
+			get_viewport().set_input_as_handled()
+			return
+		if k == KEY_M and Voice.active:
+			Voice.set_muted(not Voice.muted)
+			get_viewport().set_input_as_handled()
+			return
 		var idx: int = [KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7].find(k)
 		if idx >= 0 and idx < K.SEATS.size() and K.SEATS[idx] in mine:
 			Net.send("active", {"seat": K.SEATS[idx]})
 			get_viewport().set_input_as_handled()
+
+func _flip() -> void:
+	## hop to the next seat you hold (a pair has two, so this is "the other one")
+	var mine: Array = Net.last_snapshot.get("seats", [])
+	if mine.size() < 2:
+		return
+	var order: Array = []
+	for s in K.SEATS:
+		if s in mine:
+			order.append(s)
+	var i: int = order.find(str(Net.last_snapshot.get("active", "")))
+	UIK.sfx("clack")
+	Net.send("active", {"seat": order[(i + 1) % order.size()]})
 
 func reset() -> void:
 	_active = ""
@@ -194,6 +246,7 @@ func reset() -> void:
 	toast_chip.modulate.a = 0.0
 	_clear_overlay()
 	briefing_ui.visible = false
+	board_ui.visible = false
 	pause_panel.visible = false
 
 func _clear_overlay() -> void:
@@ -211,25 +264,34 @@ func on_snapshot(d: Dictionary) -> void:
 	var act: String = str(d.get("active", ""))
 	var seats: Array = d.get("seats", [])
 	if phase != _phase:
+		if _phase != "":
+			Fx.iris()
 		_phase = phase
 		_clear_overlay()
 		_debrief_sig = ""
 		for st in stations.values():
 			(st as Station).release_all()
 	briefing_ui.visible = phase == "briefing"
-	content.visible = phase != "briefing"
+	board_ui.visible = phase == "board"
+	content.visible = phase != "briefing" and phase != "board"
 	if phase == "briefing":
 		briefing_ui.apply(d.get("phase_data", {}), seats)
+	if phase == "board":
+		board_ui.apply(d.get("phase_data", {}))
+		return
 	var view_seat: String = act if act != "" else "captain"
 	if view_seat != _active:
 		_active = view_seat
 		cap_ui.visible = view_seat == "captain"
+		# the captain's bridge is the whole screen: its own title plaque, IGOR on the viewscreen, no dock
+		top_bar.visible = view_seat != "captain"
+		dock_bar.visible = view_seat != "captain"
 		for st in stations.keys():
 			stations[st].visible = st == view_seat
 			if st != view_seat:
 				(stations[st] as Station).release_all()
 		var info: Dictionary = K.SEAT_INFO.get(view_seat, {})
-		top_pic.texture = Art.sized("portrait_" + view_seat, 56)
+		top_pic.set_who(view_seat)
 		top_role.text = str(info.get("name", "")).to_upper()
 		top_role.add_theme_color_override("font_color", K.seat_color(view_seat).darkened(0.2))
 		top_persona.text = str(info.get("persona", "")) + ("" if act != "" else "  (watching)")
@@ -237,11 +299,32 @@ func on_snapshot(d: Dictionary) -> void:
 	if sig != _seats_sig:
 		_seats_sig = sig
 		_build_dock(seats, act)
+	cap_ui.set_seats(seats, act)
 	var mi: Dictionary = com.get("mission", {})
-	top_mission.text = "MISSION %d: %s" % [int(mi.get("num", 0)), str(mi.get("title", "")).to_upper()]
+	var sh: Dictionary = com.get("shift", {})
+	pay_chip.visible = not sh.is_empty()
+	if sh.is_empty():
+		top_mission.text = "MISSION %d: %s" % [int(mi.get("num", 0)), str(mi.get("title", "")).to_upper()]
+	else:
+		top_mission.text = "JOB %d OF %d: %s" % [mini(int(sh.n), int(sh.of)), int(sh.of), str(mi.get("title", "")).to_upper()]
+		UIK.set_chip(pay_chip, "%s OF %s" % [Screens.money(int(sh.earned)), Screens.money(int(sh.rent))], "green" if int(sh.earned) >= int(sh.rent) else "mustard")
 	top_time.text = K.fmt_time(float(mi.get("time", 0.0)))
 	var hull: float = float(com.get("hull", 100.0))
 	UIK.set_chip(hull_chip, "HULL %d%%" % int(hull), "red" if hull > 35.0 else "ink")
+	if phase == "mission":
+		UIK.music("danger" if hull < 35.0 else "game")
+		# your own face in the corner shows how it's going for you
+		var worst: int = 0
+		for wn in d.get("view", {}).get("warnings", []):
+			worst = maxi(worst, int(wn.get("level", 0)))
+		var mood: String = "panic" if (hull < 35.0 or bool(com.get("blackout", false)) or worst >= 3) else ("busy" if bool(com.get("glitchy", false)) else "")
+		if _cheer_t > 0.0:
+			_cheer_t -= 1.0 / 15.0
+			mood = "cheer"
+		top_pic.set_mood(mood)
+	else:
+		UIK.music("menu")
+		top_pic.set_mood("", false)
 	var v: Dictionary = d.get("view", {})
 	if view_seat == "captain":
 		cap_ui.apply(v, com)
@@ -253,7 +336,7 @@ func on_snapshot(d: Dictionary) -> void:
 		if dsig != _debrief_sig:
 			_debrief_sig = dsig
 			_clear_overlay()
-			overlay = Screens.debrief(pd, func(): Net.send("next"), func(): Net.send("retry"), func(): Net.send("lobby"))
+			overlay = Screens.debrief(pd, func(): Net.send("next"), func(): Net.send("retry"), func(): Net.send("lobby"), func(): Net.send("shuffle"))
 			overlay.z_index = 25
 			add_child(overlay)
 			move_child(overlay, pause_panel.get_index())
@@ -262,6 +345,14 @@ func _build_dock(seats: Array, act: String) -> void:
 	for c in dock_seats.get_children():
 		c.queue_free()
 	if seats.size() <= 1:
+		return
+	if seats.size() == 2:
+		# a pair: one big button that shows where you'd go
+		var other: String = str(seats[0]) if str(seats[1]) == act else str(seats[1])
+		var fb: Button = UIK.btn("Flip to %s  [F]" % K.seat_name(other), str(K.SEAT_INFO[other].color), _flip, str(K.SEAT_INFO[other].icon), 20)
+		fb.custom_minimum_size = Vector2(250, 54)
+		fb.tooltip_text = "You hold two stations. This hops to the other one."
+		dock_seats.add_child(fb)
 		return
 	for i in K.SEATS.size():
 		var s: String = K.SEATS[i]
@@ -281,38 +372,54 @@ func on_event(d: Dictionary) -> void:
 	match str(d.get("t", "")):
 		"igor":
 			var who: String = str(d.get("who", "igor"))
-			igor_pic.texture = Art.sized("portrait_" + who, 50)
+			igor_pic.set_who(who)
+			igor_pic.set_mood("")
+			igor_pic.set_mood("panic" if int(d.get("prio", 1)) >= 3 else "busy")
 			igor_who.text = {"igor": "IGOR", "thrupp": "ADMIRAL THRUPP", "pudding": "PUDDING", "gristle": "MA GRISTLE"}.get(who, who.to_upper())
-			igor_text.text = str(d.get("text", ""))
+			igor_text.text = ("" if who == "igor" else igor_who.text + ": ") + str(d.get("text", ""))
+			_igor_t = 0.0
 			igor_text.tooltip_text = igor_text.text
+			cap_ui.say(who, str(d.get("text", "")), int(d.get("prio", 1)))
 			if bool(d.get("speak", false)) and _phase == "mission":
 				UIK.speak(igor_text.text)
 		"toast":
 			toast(str(d.get("text", "")), str(d.get("kind", "info")), str(d.get("who", "")))
 		"step":
-			if _phase == "mission":
-				toast("NEXT: " + str(d.get("text", "")), "step", "captain")
+			pass
 		"fx":
 			match str(d.get("fx", "")):
 				"boom":
 					UIK.sfx("boom")
+					Fx.shake(5.0)
 				"hit":
 					UIK.sfx("bonk")
+					Fx.shake(10.0)
 				"alarm":
 					UIK.sfx("alarm")
 				"ding":
 					UIK.sfx("ding")
+					_cheer_t = 2.0
 				"blackout":
 					UIK.sfx("powerdown")
 				"bump":
 					UIK.sfx("clunk")
+					Fx.shake(7.0)
+				"ring":
+					UIK.sfx("ring")
+				"glitch":
+					UIK.sfx("zap")
+				"block":
+					UIK.sfx("clack")
 		"countdown":
 			UIK.sfx("chime")
 		"mission_start":
 			UIK.sfx("whoosh")
+			Fx.title_card("AND... ACTION!", str(d.get("title", "")))
 
 func toast(text: String, kind: String = "info", _who: String = "") -> void:
 	var col: String = {"bad": "red", "good": "green", "step": "mustard", "info": "cream"}.get(kind, "cream")
+	if _active == "captain":
+		cap_ui.toast(text, col)
 	if text.length() > 34:
 		text = text.left(33) + "…"
 	UIK.set_chip(toast_chip, text, col)

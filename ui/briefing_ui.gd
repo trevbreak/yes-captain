@@ -7,7 +7,7 @@ extends Control
 var head_num: Label
 var head_title: Label
 var head_place: Label
-var narrator: TextureRect
+var narrator: Face
 var page_title: Label
 var page_text: Label
 var page_list: VBoxContainer
@@ -173,7 +173,12 @@ func apply(pd: Dictionary, my_seats: Array) -> void:
 
 func _setup(b: Dictionary) -> void:
 	brief = b
-	head_num.text = "MISSION %d BRIEFING" % int(b.get("num", 0))
+	var is_job: bool = bool(b.get("job", false))
+	var sh: Dictionary = b.get("shift", {})
+	if is_job:
+		head_num.text = "JOB %d OF %d   PAYS £%d   RENT SO FAR: £%d OF £%d" % [int(sh.get("n", 1)), int(sh.get("of", 3)), int(b.get("pay", 0)), int(sh.get("earned", 0)), int(sh.get("rent", 0))]
+	else:
+		head_num.text = "MISSION %d BRIEFING" % int(b.get("num", 0))
 	head_title.text = str(b.get("title", "")).to_upper()
 	head_place.text = str(b.get("place", ""))
 	var nw: Dictionary = b.get("new", {})
@@ -184,9 +189,14 @@ func _setup(b: Dictionary) -> void:
 		{"title": "WHAT'S GOING ON", "who": str(b.get("narrator", "igor")), "text": str(b.get("story", "")), "say": str(b.get("story", ""))},
 		{"title": "THE PLAN", "who": "igor", "text": "Here is the plan. IGOR made it. It is perfect.", "list": b.get("plan", []),
 			"say": "Here is the plan. " + " ".join(PackedStringArray(plan_lines))},
-		{"title": "NEW TODAY: " + str(nw.get("title", "")).to_upper(), "who": "igor", "text": str(nw.get("text", "")),
-			"who_list": nw.get("who", []), "say": "New today. " + str(nw.get("title", "")) + ". " + str(nw.get("text", ""))},
+		{"title": ("TODAY'S SNAGS" if is_job else "NEW TODAY: " + str(nw.get("title", "")).to_upper()), "who": "igor", "text": str(nw.get("text", "")),
+			"who_list": nw.get("who", []), "say": ("Today's snags. " if is_job else "New today. " + str(nw.get("title", "")) + ". ") + str(nw.get("text", ""))},
 	]
+	var card: Dictionary = b.get("card", {})
+	if not card.is_empty():
+		# the card the crew earned last shift (or, the first time, what a Shift is)
+		pages.append({"title": "%s: %s" % [str(card.get("kind", "NEW")), str(card.get("title", "")).to_upper()], "who": "igor", "text": str(card.get("text", "")),
+			"who_list": card.get("who", []), "say": "%s. %s. %s" % [str(card.get("kind", "New")).capitalize(), str(card.get("title", "")), str(card.get("text", ""))]})
 	_auto = true
 	_spoken = -1
 	_goto(0, true)
@@ -198,7 +208,7 @@ func _goto(i: int, auto: bool) -> void:
 		_auto = false
 	page = clampi(i, 0, pages.size() - 1)
 	var p: Dictionary = pages[page]
-	narrator.texture = Art.sized("portrait_" + str(p.who), 150)
+	narrator.set_who(str(p.who))
 	page_title.text = str(p.title)
 	page_text.text = str(p.text)
 	page_text.visible_ratio = 0.0
@@ -245,7 +255,7 @@ func _process(dt: float) -> void:
 	if _auto and page < pages.size() - 1:
 		var say: String = str(pages[page].get("say", ""))
 		var est: float = 2.5 + say.length() / 16.0
-		var tts: bool = UIK.voice_on() and DisplayServer.get_name() != "headless" and DisplayServer.has_feature(DisplayServer.FEATURE_TEXT_TO_SPEECH)
+		var tts: bool = UIK.voice_on() and DisplayServer.get_name() != "headless" and (OS.has_feature("web") or DisplayServer.has_feature(DisplayServer.FEATURE_TEXT_TO_SPEECH))
 		var done: bool = (_page_t > 2.5 and not UIK.speaking()) if tts else _page_t > est
 		if done:
 			_goto(page + 1, true)

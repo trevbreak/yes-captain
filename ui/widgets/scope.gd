@@ -70,8 +70,19 @@ func _draw() -> void:
 		draw_string_outline(f, pos + Vector2(-16, sz.y / 2.0 + 18), d, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, 5, UIK.ink())
 		draw_string(f, pos + Vector2(-16, sz.y / 2.0 + 18), d, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, UIK.c("cream"))
 		if bool(it.get("weak", false)):
-			draw_string_outline(f, pos + Vector2(-48, -sz.y / 2.0 - 6), "WEAK SPOT: BACK", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, 5, UIK.ink())
-			draw_string(f, pos + Vector2(-48, -sz.y / 2.0 - 6), "WEAK SPOT: BACK", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, UIK.c("yellow"))
+			# keep the words inside the glass, however big the ship looms
+			var wy: float = maxf(pos.y - sz.y / 2.0 - 6.0, c.y - inner * 0.62)
+			draw_string_outline(f, Vector2(pos.x - 62.0, wy), "WEAK SPOT: BACK", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, 5, UIK.ink())
+			draw_string(f, Vector2(pos.x - 62.0, wy), "WEAK SPOT: BACK", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, UIK.c("yellow"))
+		if it.has("lead"):
+			# Sensors scanned it: a diamond shows where to put the crosshair to hit it
+			var lx: float = clampf(float(it.lead) / cone, -1.1, 1.1)
+			var lp: Vector2 = Vector2(c.x + lx * inner * 0.92, pos.y)
+			if lp.distance_to(c) < inner - 8.0:
+				var dsz: float = 11.0
+				var dia: PackedVector2Array = PackedVector2Array([lp + Vector2(0, -dsz), lp + Vector2(dsz, 0), lp + Vector2(0, dsz), lp + Vector2(-dsz, 0), lp + Vector2(0, -dsz)])
+				draw_polyline(dia, UIK.ink(), 6.0, true)
+				draw_polyline(dia, UIK.c("yellow"), 3.0, true)
 	# bullets flying away from us / at us
 	for b in view.get("bullets", []):
 		var x3: float = float(b.rel) / cone
@@ -94,4 +105,12 @@ func _draw() -> void:
 		var f2: Font = UIK.font("head")
 		draw_string_outline(f2, c + Vector2(-92, -inner * 0.3), "GUN BROKEN", HORIZONTAL_ALIGNMENT_LEFT, -1, 30, 8, UIK.ink())
 		draw_string(f2, c + Vector2(-92, -inner * 0.3), "GUN BROKEN", HORIZONTAL_ALIGNMENT_LEFT, -1, 30, UIK.c("red"))
+	if bool(view.get("pudding_sat", false)):
+		var pt: Texture2D = _t("obj_pudding")
+		var ps: float = inner * 1.1
+		var bob: float = sin(Time.get_ticks_msec() / 400.0) * 5.0
+		draw_texture_rect(pt, Rect2(c + Vector2(-ps / 2.0, inner * 0.15 + bob), Vector2(ps, ps * 0.89)), false)
+		var f3: Font = UIK.font("head")
+		draw_string_outline(f3, c + Vector2(-118, -inner * 0.35), "PUDDING IS ASLEEP ON IT", HORIZONTAL_ALIGNMENT_LEFT, -1, 19, 7, UIK.ink())
+		draw_string(f3, c + Vector2(-118, -inner * 0.35), "PUDDING IS ASLEEP ON IT", HORIZONTAL_ALIGNMENT_LEFT, -1, 19, UIK.c("pink"))
 	draw_texture_rect(_bezel, Rect2(c - Vector2(r, r), Vector2(r, r) * 2.0), false)

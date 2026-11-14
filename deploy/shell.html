@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0">
+<title>Yes, Captain!</title>
+<style>
+html, body, #canvas { margin: 0; padding: 0; border: 0; }
+body { background: #f2e2c0; color: #1d1712; overflow: hidden; touch-action: none;
+	font-family: "Arial Rounded MT Bold", "Trebuchet MS", "Comic Sans MS", Verdana, sans-serif; }
+#canvas { display: block; }
+#canvas:focus { outline: none; }
+#status { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; align-items: center;
+	background: radial-gradient(ellipse at center, #f7ead0 0%, #f2e2c0 55%, #d4b985 130%); text-align: center; }
+#card { border: 6px solid #1d1712; border-radius: 26px 18px 30px 16px; background: #fbf2dc; padding: 28px 44px 30px;
+	box-shadow: 8px 9px 0 #1d1712; max-width: 80vw; transform: rotate(-1deg); }
+h1 { margin: 0; font-size: clamp(34px, 7vw, 76px); letter-spacing: 1px; color: #c9413a;
+	text-shadow: 3px 3px 0 #1d1712, -2px -2px 0 #1d1712, 2px -2px 0 #1d1712, -2px 2px 0 #1d1712, 0 6px 0 #1d1712; }
+h2 { margin: 6px 0 22px; font-size: clamp(13px, 2vw, 20px); letter-spacing: 2px; }
+#bar { height: 26px; border: 5px solid #1d1712; border-radius: 16px; background: #e3cd9f; overflow: hidden; }
+#fill { height: 100%; width: 0%; background: repeating-linear-gradient(-45deg, #e2a93b 0 14px, #e07b39 14px 28px); transition: width .2s; }
+#quip { margin-top: 16px; font-size: clamp(14px, 2vw, 20px); min-height: 2.6em; }
+#quip b { color: #c9413a; }
+#status-notice { display: none; margin-top: 14px; padding: 10px 14px; border: 4px solid #c9413a; border-radius: 12px; background: #fff; }
+</style>
+$GODOT_HEAD_INCLUDE
+</head>
+<body>
+<canvas id="canvas">Your browser does not support the canvas tag.</canvas>
+<noscript>Yes, Captain! needs JavaScript.</noscript>
+<div id="status">
+	<div id="card">
+		<h1>YES, CAPTAIN!</h1>
+		<h2>A BRIDGE SIMULATOR FOR LOUD FRIENDS</h2>
+		<div id="bar"><div id="fill"></div></div>
+		<div id="quip"><b>IGOR:</b> Loading ship. Please do not touch anything. Especially you.</div>
+		<div id="status-notice"></div>
+	</div>
+</div>
+<script src="config.js"></script>
+<script>
+// Browsers only run the game in a "secure context": https, or localhost. And the game's live connection
+// only works where the browser fully trusts the certificate. So every visitor is sent to the server's
+// home address (YC_HOME, set by the container) when there is one, and from plain http to https anyway.
+window.YC_BLOCKED = false;
+(function () {
+	var home = window.YC_HOME || '';
+	var target = '';
+	var local = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+	if (home && location.origin !== home && !local) {
+		target = home + location.pathname + location.search;
+	} else if (!window.isSecureContext && window.YC_HTTPS_PORT) {
+		target = 'https://' + location.hostname + ':' + window.YC_HTTPS_PORT + location.pathname + location.search;
+	}
+	if (!target && window.isSecureContext) { return; }
+	window.YC_BLOCKED = true;
+	if (target && window.isSecureContext) {
+		// already on https, just the wrong name: go straight there
+		location.replace(target);
+		return;
+	}
+	document.addEventListener('DOMContentLoaded', function () {
+		var q = document.getElementById('quip');
+		var n = document.getElementById('status-notice');
+		document.getElementById('bar').style.display = 'none';
+		n.style.display = 'block';
+		if (target) {
+			q.innerHTML = '<b>IGOR:</b> Wrong door. Browsers insist on the https one. IGOR is taking you there.';
+			n.innerHTML = 'Going to <a href="' + target + '">' + target + '</a>.';
+			setTimeout(function () { location.replace(target); }, 1500);
+		} else {
+			q.innerHTML = '<b>IGOR:</b> Browsers only run this game over https. This server has none set up.';
+			n.textContent = 'Set TLS_HOST, LAN_IP or PUBLIC_HOST on the container, then use the https address.';
+		}
+	});
+}());
+</script>
+<script src="$GODOT_URL"></script>
+<script>
+const GODOT_CONFIG = $GODOT_CONFIG;
+const GODOT_THREADS_ENABLED = $GODOT_THREADS_ENABLED;
+const engine = new Engine(GODOT_CONFIG);
+(function () {
+	if (window.YC_BLOCKED) { return; }
+	const overlay = document.getElementById('status');
+	const fill = document.getElementById('fill');
+	const quip = document.getElementById('quip');
+	const notice = document.getElementById('status-notice');
+	const QUIPS = [
+		'Loading ship. Please do not touch anything. Especially you.',
+		'Inflating the captain. This takes a while.',
+		'Counting the crew. IGOR keeps getting a low number.',
+		'Warming up the engines. Not that warm. Stop.',
+		'Feeding Pudding. Pudding is also feeding on a cable.',
+		'Untangling the wheel from the throttle. Again.',
+		'IGOR is drawing every line by hand. IGOR has no hands.',
+		'Almost ready. This is a lie robots tell.',
+	];
+	let qi = 0;
+	const timer = setInterval(() => {
+		qi = (qi + 1) % QUIPS.length;
+		quip.innerHTML = '<b>IGOR:</b> ' + QUIPS[qi];
+	}, 2600);
+	function fail(err) {
+		console.error(err);
+		clearInterval(timer);
+		notice.style.display = 'block';
+		notice.textContent = (err && err.message) ? err.message : String(err);
+		quip.innerHTML = '<b>IGOR:</b> Something broke before the ship even started. A new record.';
+	}
+	const missing = Engine.getMissingFeatures({ threads: GODOT_THREADS_ENABLED });
+	if (missing.length !== 0) {
+		fail('This browser is missing: ' + missing.join(', '));
+		return;
+	}
+	engine.startGame({
+		onProgress: function (current, total) {
+			if (current > 0 && total > 0) { fill.style.width = Math.round(100 * current / total) + '%'; }
+		},
+	}).then(() => { clearInterval(timer); overlay.remove(); }, fail);
+}());
+</script>
+<script src="voice.js"></script>
+</body>
+</html>

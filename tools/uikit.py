@@ -115,8 +115,35 @@ def tab(out, name, fill, seed=19):
     _save(svg, out, name, [30, 24, 30, 10], [22, 8, 22, 4])
 
 
+def desk(out, name, col, seed=23):
+    """A station's console: a chunky painted frame with rivets round a paper worktop. 200x200, 9-sliced."""
+    W = 200
+    svg = SVG(W, W)
+    pen = Pen(svg, 5.5, 1.0, seed)
+    body = lighter(col, 0.12)
+    pen.shape(rrect(8, 8, W - 22, W - 22, 26), body, shadow=(5, 6, INK, SHADOW), shade=(-7, -7, 0.22))
+    # the worktop: warm paper with a wash of the seat's colour
+    top = rrect(26, 26, W - 58, W - 58, 14)
+    q = pen.shape(top, mix_paper(col), w=4.2)
+    svg.clip_begin(q)
+    svg.path(path_d(rrect(26, 26, W - 58, 12, 6)), darker(col, 0.3), 0.22)
+    svg.clip_end()
+    # rivets in the corners (they sit in the 9-slice corners, so they never stretch)
+    for (x, y) in ((18, 18), (W - 32, 18), (18, W - 32), (W - 32, W - 32)):
+        pen.shape(circle(x, y, 4.6, 20), lighter(col, 0.45), w=2.4, wob=0.2)
+    svg.path(path_d(ellipse(60, 15, 26, 3.2, 24, -0.03)), "#ffffff", 0.35)
+    _save(svg, out, name, [52, 52, 58, 58], [32, 30, 38, 36])
+
+
+def mix_paper(col):
+    from ink import mix
+    return mix("cream", col, 0.13)
+
+
 def build(out, palette_buttons):
     os.makedirs(out, exist_ok=True)
+    for col in ("navy", "blue", "orange", "red", "green", "purple", "mustard"):
+        desk(out, "desk_%s" % col, col, seed=23 + len(col))
     panel(out, "panel", "cream")
     panel(out, "panel_paper", "paper", seed=4)
     panel(out, "panel_dark", "night2", seed=6)
