@@ -75,7 +75,7 @@ func _build_screen() -> void:
 	ring.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	screen.add_child(ring)
 	var mask: Panel = Panel.new()
-	mask.add_theme_stylebox_override("panel", _box(Color("#e9dcbb"), Color("#e9dcbb"), 0, 32))
+	mask.add_theme_stylebox_override("panel", _box(Chart.bg_color(), Chart.bg_color(), 0, 32))
 	mask.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mask.clip_children = CanvasItem.CLIP_CHILDREN_ONLY
 	mask.mouse_filter = Control.MOUSE_FILTER_IGNORE

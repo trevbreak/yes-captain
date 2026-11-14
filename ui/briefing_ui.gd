@@ -255,7 +255,7 @@ func _process(dt: float) -> void:
 	if _auto and page < pages.size() - 1:
 		var say: String = str(pages[page].get("say", ""))
 		var est: float = 2.5 + say.length() / 16.0
-		var tts: bool = UIK.voice_on() and DisplayServer.get_name() != "headless" and DisplayServer.has_feature(DisplayServer.FEATURE_TEXT_TO_SPEECH)
+		var tts: bool = UIK.voice_on() and DisplayServer.get_name() != "headless" and (OS.has_feature("web") or DisplayServer.has_feature(DisplayServer.FEATURE_TEXT_TO_SPEECH))
 		var done: bool = (_page_t > 2.5 and not UIK.speaking()) if tts else _page_t > est
 		if done:
 			_goto(page + 1, true)

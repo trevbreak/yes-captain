@@ -61,6 +61,8 @@ fi
 	echo '	@ws path /ws'
 	echo '	reverse_proxy @ws 127.0.0.1:7777'
 	echo '	respond /healthz "ok" 200'
+	# IGOR's voice, made by the game server (net/tts_server.gd)
+	echo '	reverse_proxy /tts 127.0.0.1:7778'
 	echo '	header {'
 	echo '		X-Content-Type-Options nosniff'
 	echo '		Referrer-Policy no-referrer'

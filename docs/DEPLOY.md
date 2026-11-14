@@ -84,6 +84,14 @@ Voice goes directly between players' browsers. A minority of home routers block 
 (a `coturn` container, UDP 3478 forwarded) and three settings on this container: `TURN_URL`, `TURN_USER`,
 `TURN_PASS`. Not needed until somebody actually hits the problem.
 
+## IGOR's voice
+
+The container makes IGOR's speech itself, so every player hears the same voice whatever computer they are on.
+It runs [Piper](https://github.com/rhasspy/piper) (MIT licence, offline, on the CPU) with a British voice, puts
+it through a ring modulator, and caches each line, so a line is only ever made once. Nothing is sent anywhere
+else. If the speech service is missing or fails, browsers fall back to the computer's own voice.
+`YC_TTS_CMD=off` turns the service off.
+
 ## Settings
 
 | Variable | Meaning |

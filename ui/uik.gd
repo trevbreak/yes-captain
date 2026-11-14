@@ -53,13 +53,13 @@ static func speak(text: String) -> void:
 		s.call("speak", text)
 
 static func stop_speech() -> void:
-	if DisplayServer.get_name() != "headless" and DisplayServer.has_feature(DisplayServer.FEATURE_TEXT_TO_SPEECH):
-		DisplayServer.tts_stop()
+	var s: Node = _sfx_node()
+	if s != null:
+		s.call("stop_speech")
 
 static func speaking() -> bool:
-	if DisplayServer.get_name() == "headless" or not DisplayServer.has_feature(DisplayServer.FEATURE_TEXT_TO_SPEECH):
-		return false
-	return DisplayServer.tts_is_speaking()
+	var s: Node = _sfx_node()
+	return s != null and bool(s.call("is_speaking"))
 
 static func music(mood: String) -> void:
 	var s: Node = _sfx_node()

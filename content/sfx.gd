@@ -12,6 +12,12 @@ var next_player: int = 0
 var tts_on: bool = true
 var tts_voice: String = ""
 var music_player: AudioStreamPlayer
+var mission_player: AudioStreamPlayer
+var voice_player: AudioStreamPlayer
+var _voice_req: HTTPRequest
+var _voice_busy: bool = false
+var _voice_queue: String = ""
+var _voice_server: bool = true    # false once the server has said it cannot speak: then the browser voice
 var music_on: bool = true
 var _mood: String = ""
 
@@ -37,23 +43,30 @@ func _ready() -> void:
 	_load_music()
 
 func _load_music() -> void:
-	## the stride-piano loop made by tools/make_music.py
-	music_player = AudioStreamPlayer.new()
-	add_child(music_player)
-	if not ResourceLoader.exists("res://assets/music/shift.wav") or DisplayServer.get_name() == "headless":
-		return
-	var src: AudioStreamWAV = load("res://assets/music/shift.wav")
+	## two loops: the stride piano for the menus (tools/make_music.py), the theremin matinee for missions
+	## (tools/make_space_music.py). Moving between them fades one out and the other in.
+	music_player = _music_track("res://assets/music/shift.wav")
+	mission_player = _music_track("res://assets/music/mission.wav")
+
+func _music_track(path: String) -> AudioStreamPlayer:
+	var p: AudioStreamPlayer = AudioStreamPlayer.new()
+	add_child(p)
+	p.volume_db = -60.0
+	if not ResourceLoader.exists(path) or DisplayServer.get_name() == "headless":
+		return p
+	var src: AudioStreamWAV = load(path)
 	if src == null:
-		return
+		return p
 	var st: AudioStreamWAV = src.duplicate()
 	st.loop_mode = AudioStreamWAV.LOOP_FORWARD
 	st.loop_begin = 0
 	st.loop_end = int(st.get_length() * st.mix_rate)
-	music_player.stream = st
-	music_player.volume_db = -60.0
+	p.stream = st
+	return p
 
 func music(mood: String) -> void:
-	## "menu" (quiet and unhurried), "game", "danger" (faster: the hull is going), "off"
+	## "menu" (the piano, quiet and unhurried), "game" (the theremin), "danger" (the theremin, faster: the hull
+	## is going), "off"
 	if music_player == null or music_player.stream == null:
 		return
 	if mood == _mood:
@@ -62,16 +75,26 @@ func music(mood: String) -> void:
 	_apply_music()
 
 func _apply_music() -> void:
-	var want: bool = music_on and enabled and _mood != "off" and _mood != ""
-	if want and not music_player.playing:
-		music_player.play()
-	elif not want and music_player.playing:
-		music_player.stop()
-	var pitch: float = {"menu": 0.9, "game": 1.0, "danger": 1.13}.get(_mood, 1.0)
-	var vol: float = {"menu": -19.0, "game": -22.0, "danger": -19.0}.get(_mood, -22.0)
-	var tw: Tween = create_tween().set_parallel(true)
-	tw.tween_property(music_player, "pitch_scale", pitch, 0.8)
-	tw.tween_property(music_player, "volume_db", vol, 0.8)
+	var on: bool = music_on and enabled and _mood != "off" and _mood != ""
+	var flying: bool = _mood in ["game", "danger"] and mission_player != null and mission_player.stream != null
+	var want: AudioStreamPlayer = (mission_player if flying else music_player) if on else null
+	var tw: Tween = null
+	for p in [music_player, mission_player]:
+		if p == null or p.stream == null:
+			continue
+		if tw == null:
+			tw = create_tween().set_parallel(true)
+		if p == want:
+			if not p.playing:
+				p.volume_db = -40.0
+				p.play()
+			var pitch: float = {"menu": 0.9, "game": 1.0, "danger": 1.1}.get(_mood, 1.0)
+			var vol: float = {"menu": -19.0, "game": -21.0, "danger": -18.0}.get(_mood, -21.0)
+			tw.tween_property(p, "pitch_scale", pitch, 0.8)
+			tw.tween_property(p, "volume_db", vol, 0.8)
+		elif p.playing:
+			tw.tween_property(p, "volume_db", -50.0, 0.7)
+			tw.chain().tween_callback(p.stop)
 
 func set_music(on: bool) -> void:
 	music_on = on
@@ -89,17 +112,65 @@ func play(name: String, pitch: float = 1.0, vol: float = 0.0) -> void:
 	p.play()
 
 func speak(text: String) -> void:
-	## IGOR talks. System TTS if available (slow, low, flat), otherwise the chime only.
+	## IGOR talks. In the browser the game's server makes the speech (one clear voice through a ring modulator,
+	## the same for every player: see net/tts_server.gd). Without it, the computer's own voice at its normal pitch.
 	play("chime")
-	if not tts_on or not enabled or not DisplayServer.has_feature(DisplayServer.FEATURE_TEXT_TO_SPEECH):
+	if not tts_on or not enabled or DisplayServer.get_name() == "headless":
 		return
-	if DisplayServer.get_name() == "headless":
+	stop_speech()
+	if OS.has_feature("web") and _voice_server:
+		_fetch_voice(text)
+		return
+	_system_voice(text)
+
+func _fetch_voice(text: String) -> void:
+	if _voice_req == null:
+		_voice_req = HTTPRequest.new()
+		_voice_req.timeout = 8.0
+		add_child(_voice_req)
+		_voice_req.request_completed.connect(_on_voice)
+		voice_player = AudioStreamPlayer.new()
+		add_child(voice_player)
+	if _voice_busy:
+		_voice_queue = text      # only the latest line matters: say it when this one arrives
+		return
+	_voice_busy = true
+	var robot: bool = not (text.begins_with("ADMIRAL THRUPP:") or text.begins_with("MA GRISTLE:") or text.begins_with("PUDDING:"))
+	var origin: String = str(JavaScriptBridge.eval("location.origin", true)) if OS.has_feature("web") else ""
+	if origin == "" or origin == "null":
+		_voice_busy = false
+		_system_voice(text)
+		return
+	var err: int = _voice_req.request("%s/tts?r=%d&t=%s" % [origin, 1 if robot else 0, text.left(TtsServer.MAX_TEXT).uri_encode()])
+	if err != OK:
+		_voice_busy = false
+		_system_voice(text)
+
+func _on_voice(result: int, code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
+	_voice_busy = false
+	var next: String = _voice_queue
+	_voice_queue = ""
+	if next != "":
+		_fetch_voice(next)
+		return
+	if result != HTTPRequest.RESULT_SUCCESS or code != 200:
+		if code == 404 or code == 501:
+			_voice_server = false    # this server has no voice: use the browser's from now on
+		return
+	var st: AudioStreamWAV = TtsServer.wav_stream(body)
+	if st != null and tts_on and enabled:
+		voice_player.stream = st
+		voice_player.volume_db = -2.0
+		voice_player.play()
+
+func _system_voice(text: String) -> void:
+	if not DisplayServer.has_feature(DisplayServer.FEATURE_TEXT_TO_SPEECH):
 		return
 	var voices: PackedStringArray = DisplayServer.tts_get_voices_for_language("en")
 	if voices.is_empty():
 		return
 	if tts_voice == "":
-		# IGOR prefers a robot-ish voice: Fred if the system has it, then a few flat ones
+		# a robot-ish voice if the computer has one, at its natural pitch so the words stay clear
 		tts_voice = voices[0]
 		var found: bool = false
 		for want in ["fred", "ralph", "daniel", "alex", "lee"]:
@@ -110,8 +181,20 @@ func speak(text: String) -> void:
 					break
 			if found:
 				break
-	DisplayServer.tts_stop()
-	DisplayServer.tts_speak(text, tts_voice, 60, 0.55, 0.85)
+	DisplayServer.tts_speak(text, tts_voice, 70, 1.0, 1.0)
+
+func stop_speech() -> void:
+	if voice_player != null:
+		voice_player.stop()
+	if DisplayServer.get_name() != "headless" and DisplayServer.has_feature(DisplayServer.FEATURE_TEXT_TO_SPEECH):
+		DisplayServer.tts_stop()
+
+func is_speaking() -> bool:
+	if _voice_busy or (voice_player != null and voice_player.playing):
+		return true
+	if DisplayServer.get_name() == "headless" or not DisplayServer.has_feature(DisplayServer.FEATURE_TEXT_TO_SPEECH):
+		return false
+	return DisplayServer.tts_is_speaking()
 
 # ---------------------------------------------------------------- synthesis
 

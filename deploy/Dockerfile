@@ -37,6 +37,18 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates tini curl \
  && rm -rf /var/lib/apt/lists/* \
  && useradd --system --home /data --shell /usr/sbin/nologin captain
+# IGOR's voice: Piper (MIT licence, runs offline on the CPU) with a British voice. The game server runs it
+# for each new line and caches the result (net/tts_server.gd). It says one line now, so a broken install
+# fails the build instead of a game night.
+ARG TARGETARCH
+ARG PIPER_VERSION=2023.11.14-2
+ARG PIPER_VOICE=en/en_GB/alan/medium/en_GB-alan-medium
+RUN case "${TARGETARCH}" in arm64) A=aarch64 ;; *) A=x86_64 ;; esac \
+ && curl -fsSL "https://github.com/rhasspy/piper/releases/download/${PIPER_VERSION}/piper_linux_${A}.tar.gz" | tar -xz -C /opt \
+ && curl -fsSL -o /opt/piper/voice.onnx "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/${PIPER_VOICE}.onnx" \
+ && curl -fsSL -o /opt/piper/voice.onnx.json "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/${PIPER_VOICE}.onnx.json" \
+ && echo "IGOR is online." | LD_LIBRARY_PATH=/opt/piper /opt/piper/piper --model /opt/piper/voice.onnx --output_file /tmp/igor.wav \
+ && test -s /tmp/igor.wav && rm /tmp/igor.wav
 COPY --from=caddy:2 /usr/bin/caddy /usr/bin/caddy
 COPY --from=build /usr/local/bin/godot /usr/local/bin/godot
 COPY --from=build /src/export/web /srv/web

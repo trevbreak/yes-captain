@@ -77,15 +77,21 @@ func _run_server() -> void:
 	print("Yes, Captain! server on port %d, up to %d rooms (err %d)" % [port, max_rooms, err])
 	if err != OK:
 		get_tree().quit(1)
+	if TtsServer.available():
+		var tts: TtsServer = TtsServer.new()
+		add_child(tts)
+		tts.start(int(OS.get_environment("YC_TTS_PORT")) if OS.get_environment("YC_TTS_PORT") != "" else TtsServer.PORT)
 
 func _apply_args() -> void:
-	if args.has("autotest") or args.has("layoutcheck") or args.has("tour") or args.has("readmeshots") or args.has("shiftshots"):
+	if args.has("autotest") or args.has("layoutcheck") or args.has("tour") or args.has("readmeshots") or args.has("shiftshots") or args.has("captainshots"):
 		Progress.persist = false
 		Progress.forget_local()
 		Progress.local().unlock_all()
 	if args.has("shots"):
 		# macOS stops redrawing covered windows, which freezes screenshots: keep the test window on top
 		get_window().always_on_top = true
+	if args.has("chartstyle"):
+		Chart.STYLE = str(args.chartstyle)
 	if args.has("nograin"):
 		UIK.set_grain(false)
 	if args.has("host"):
@@ -116,6 +122,10 @@ func _apply_args() -> void:
 		args["shots"] = args.shiftshots
 		get_window().always_on_top = true
 		_shiftshots.call_deferred()
+	elif args.has("captainshots"):
+		args["shots"] = args.captainshots
+		get_window().always_on_top = true
+		_captainshots.call_deferred()
 	elif args.has("menushot"):
 		_menushot.call_deferred()
 	elif args.has("readmeshots"):
@@ -274,6 +284,23 @@ func _play(id: String, seconds: float) -> void:
 	await _start_mission(id, K.SEATS, true)
 	await _launch()
 	await _wait(seconds)
+
+func _captainshots() -> void:
+	## the captain's chart just after a step is ticked, and once the tick has faded (for trying chart styles)
+	await _wait(1.0)
+	_on_solo("Captain")
+	await _wait(0.4)
+	args["speed"] = 1.0
+	await _play(str(args.get("mission", "lesson")), 0.5)
+	Net.send("active", {"seat": "captain"})
+	var t0: int = Time.get_ticks_msec()
+	while Time.get_ticks_msec() - t0 < 60000 and (Net.host.mission == null or Net.host.mission.step < 2):
+		await _wait(0.1)
+	await _wait(0.6)
+	await _shot("cap_a_tick")
+	await _wait(4.5)
+	await _shot("cap_b_faded")
+	get_tree().quit(0)
 
 func _readmeshots() -> void:
 	## the screenshots in docs/screenshots, taken in good-looking states
