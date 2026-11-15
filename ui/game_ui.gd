@@ -16,9 +16,22 @@ var top_time: Label
 var hull_chip: PanelContainer
 var pay_chip: PanelContainer
 var board_ui: Screens.JobBoard
-var content: Control
+var content: BoxContainer
 var stations: Dictionary = {}
+var wraps: Dictionary = {}          # seat -> the FitBox its screen sits in (captain too)
 var cap_ui: CaptainUI
+var hint_bar: HBoxContainer        # a crew role: both stations' "your job now", side by side over the desks
+var hint_bits: Array = []           # [{chip, label, odd}] one per station
+var _focus: String = ""             # a combined screen: the half that hears the keyboard
+var _shown: Array = []
+var sideways: Control              # "turn your phone sideways": in-game screens are landscape only
+var _shell: Control
+var _portrait: bool = false
+var join_panel: PanelContainer      # watching mid-shift: take over a role from a robot
+var join_row: HBoxContainer
+var _join_sig: String = ""
+var desks: Dictionary = {}          # role -> RoleDesk: a crew role's two stations on one console
+var _desk: String = ""              # the role desk on screen ("" = a single station, or the captain)
 var top_bar: HBoxContainer
 var dock_bar: HBoxContainer
 var dock_seats: HBoxContainer
@@ -44,6 +57,7 @@ func _ready() -> void:
 	var m: MarginContainer = UIK.margin(root, 10)
 	m.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(m)
+	_shell = m
 	# ---- top bar
 	var top: HBoxContainer = UIK.hbox(12)
 	top.custom_minimum_size = Vector2(0, TOP_H)
@@ -83,19 +97,50 @@ func _ready() -> void:
 	menu_btn.tooltip_text = "Menu (Esc)"
 	menu_btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	top.add_child(menu_btn)
-	# ---- station area
-	content = Control.new()
+	# ---- what a crew role is doing now: one line per station, colour-coded
+	hint_bar = UIK.hbox(10)
+	hint_bar.visible = false
+	root.add_child(hint_bar)
+	for i in 2:
+		var hp: PanelContainer = UIK.panel("panel_small", [4, 0, 4, 0])
+		hp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		hint_bar.add_child(hp)
+		var hr: HBoxContainer = UIK.hbox(8)
+		hp.add_child(hr)
+		var chip: PanelContainer = UIK.chip("", "cream", "", 15)
+		chip.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		hr.add_child(chip)
+		var hl: Label = UIK.para("", 18)
+		hl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		hl.max_lines_visible = 2
+		hl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		hr.add_child(hl)
+		var odd: PanelContainer = UIK.chip("SOMETHING'S NOT RIGHT", "purple", "question", 14)
+		odd.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		odd.tooltip_text = "This station has a glitch. Tell the captain what's odd. The Tech has the manual."
+		odd.mouse_filter = Control.MOUSE_FILTER_PASS
+		odd.visible = false
+		hr.add_child(odd)
+		hint_bits.append({"chip": chip, "label": hl, "odd": odd})
+	# ---- station area: each screen in a FitBox, so a small or odd-shaped screen shrinks it rather than
+	# spilling controls over each other. A crew role's two stations sit side by side (stacked on a tall screen).
+	content = BoxContainer.new()
+	content.add_theme_constant_override("separation", 10)
 	content.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	root.add_child(content)
 	cap_ui = CaptainUI.new()
-	cap_ui.visible = false
 	cap_ui.menu_pressed.connect(_toggle_pause)
-	content.add_child(cap_ui)
+	_wrap("captain", cap_ui)
 	for st in K.STATIONS:
-		var ui: Station = _make_station(st)
-		ui.visible = false
-		content.add_child(ui)
+		var ui: Station = RoleDesk._make(st)
+		ui.focus_wanted.connect(_set_focus)
+		_wrap(st, ui)
 		stations[st] = ui
+	for rid in K.ROLES:
+		var dk: RoleDesk = RoleDesk.new(rid)
+		dk.focus_wanted.connect(_set_focus)
+		_wrap("role_" + rid, dk)
+		desks[rid] = dk
 	# ---- dock
 	var dock: HBoxContainer = UIK.hbox(10)
 	dock.custom_minimum_size = Vector2(0, DOCK_H)
@@ -140,22 +185,113 @@ func _ready() -> void:
 	board_ui.visible = false
 	add_child(board_ui)
 	_build_pause()
+	_build_join()
+	_build_sideways()
 	Net.snapshot.connect(on_snapshot)
 	Net.event.connect(on_event)
 
-func _make_station(st: String) -> Station:
-	match st:
-		"helm":
-			return HelmUI.new()
-		"engines":
-			return EnginesUI.new()
-		"weapons":
-			return WeaponsUI.new()
-		"sensors":
-			return SensorsUI.new()
-		"shields":
-			return ShieldsUI.new()
-	return EngineerUI.new()
+func _wrap(st: String, ui: Control) -> void:
+	var fb: FitBox = FitBox.new()
+	fb.visible = false
+	content.add_child(fb)
+	fb.add_child(ui)
+	wraps[st] = fb
+
+func _st(seat: String) -> Station:
+	## the Station showing this seat right now: on the role desk when there is one
+	if _desk != "" and (desks[_desk] as RoleDesk).stations.has(seat):
+		return (desks[_desk] as RoleDesk).stations[seat]
+	return stations.get(seat)     # null for the captain
+
+func _all_stations() -> Array:
+	var out: Array = stations.values()
+	for dk in desks.values():
+		out.append_array((dk as RoleDesk).stations.values())
+	return out
+
+func _build_join() -> void:
+	join_panel = UIK.panel("panel_small", [6, 4, 6, 4])
+	join_panel.set_meta("overlay", true)
+	join_panel.z_index = 30
+	join_panel.visible = false
+	join_panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
+	join_panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	join_panel.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	join_panel.offset_bottom = -200
+	add_child(join_panel)
+	var v: VBoxContainer = UIK.vbox(6)
+	join_panel.add_child(v)
+	v.add_child(UIK.head("YOU'RE WATCHING. JOIN IN?", 22, UIK.c("red")))
+	v.add_child(UIK.para("A robot is playing these. Tap one and it's yours, right now.", 18, K.pal("ink_soft")))
+	join_row = UIK.hbox(10)
+	join_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	v.add_child(join_row)
+
+func _update_join(seats: Array, phase: String) -> void:
+	## the roles a robot is playing, offered to whoever is only watching
+	var free: Array = []
+	if seats.is_empty() and phase != "lobby" and phase != "":
+		var ls: Dictionary = Net.last_lobby.get("seats", {})
+		for rid in K.ROLES:
+			var st: Dictionary = ls.get(str(K.ROLES[rid].seats[0]), {})
+			if int(st.get("owner", 0)) == 0:
+				free.append(rid)
+	var sig: String = ",".join(PackedStringArray(free))
+	join_panel.visible = not free.is_empty() and not _portrait
+	if sig == _join_sig:
+		return
+	_join_sig = sig
+	for c in join_row.get_children():
+		c.queue_free()
+	for rid2 in free:
+		var b: Button = UIK.btn("Take the %s" % K.role_name(rid2), K.role_color(rid2), func(): Net.send("claim", {"seat": rid2}), K.role_icon(rid2), 20)
+		b.custom_minimum_size = Vector2(0, 64)
+		join_row.add_child(b)
+
+func _build_sideways() -> void:
+	sideways = Control.new()
+	sideways.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	sideways.set_meta("overlay", true)
+	sideways.z_index = 45
+	sideways.visible = false
+	add_child(sideways)
+	var bg: ColorRect = ColorRect.new()
+	bg.color = K.pal("navy")
+	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	sideways.add_child(bg)
+	var cc: CenterContainer = CenterContainer.new()
+	cc.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	sideways.add_child(cc)
+	var v: VBoxContainer = UIK.vbox(18)
+	v.alignment = BoxContainer.ALIGNMENT_CENTER
+	cc.add_child(v)
+	var ic: TextureRect = UIK.pic("ship_ours", Vector2(150, 195))
+	ic.rotation = deg_to_rad(90)
+	ic.pivot_offset = Vector2(75, 97)
+	v.add_child(UIK.center(ic))
+	v.add_child(UIK.title("TURN SIDEWAYS", 64, UIK.c("mustard"), HORIZONTAL_ALIGNMENT_CENTER))
+	var t: Label = UIK.para("Your desk needs both thumbs. Turn your phone on its side.", 28, K.pal("cream"))
+	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	t.custom_minimum_size = Vector2(560, 0)
+	v.add_child(t)
+	var fb: Button = UIK.btn("Go full screen", "cream", func(): Web.toggle_fullscreen(true), "", 26)
+	fb.custom_minimum_size = Vector2(380, 70)
+	fb.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	v.add_child(fb)
+
+func set_portrait(p: bool) -> void:
+	## in-game screens are made for landscape: upright, cover them with the "turn sideways" card
+	_portrait = p
+	sideways.visible = p
+	_shell.visible = not p
+	if p:
+		briefing_ui.visible = false
+		board_ui.visible = false
+		if overlay != null:
+			overlay.visible = false
+	elif overlay != null:
+		overlay.visible = true
+	_fit_direction()
 
 func _build_pause() -> void:
 	pause_panel = Control.new()
@@ -176,18 +312,24 @@ func _build_pause() -> void:
 	cc.add_child(w[0])
 	var b: VBoxContainer = w[1]
 	b.add_child(UIK.speech("The ship does not pause. IGOR does not allow it.", "igor", "", 70, 21))
+	# the four switches two by two, so the menu fits a short phone screen with finger-sized buttons
+	var tg: GridContainer = GridContainer.new()
+	tg.columns = 2
+	tg.add_theme_constant_override("h_separation", 8)
+	tg.add_theme_constant_override("v_separation", 8)
+	b.add_child(tg)
 	var snd: Button = UIK.toggle("Sound", "green", func(on: bool): UIK.set_sound(on), "speaker")
 	snd.button_pressed = UIK.sound_on()
-	b.add_child(snd)
 	var voice: Button = UIK.toggle("IGOR's voice", "green", func(on: bool): UIK.set_voice(on), "robot")
 	voice.button_pressed = UIK.voice_on()
-	b.add_child(voice)
 	var mus: Button = UIK.toggle("Music", "green", func(on: bool): UIK.set_music(on), "speaker")
 	mus.button_pressed = UIK.music_on()
-	b.add_child(mus)
 	var grain: Button = UIK.toggle("Film grain", "green", func(on: bool): UIK.set_grain(on), "eye")
 	grain.button_pressed = Film.enabled
-	b.add_child(grain)
+	for t in [snd, voice, mus, grain]:
+		(t as Button).size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		tg.add_child(t)
+	b.add_child(UIK.btn("Keys", "cream", _open_keys, "menu"))
 	b.add_child(UIK.btn("Back to the game", "green", _toggle_pause, "play"))
 	b.add_child(UIK.btn("Leave the game", "red", func():
 		pause_panel.visible = false
@@ -198,6 +340,90 @@ func _process(dt: float) -> void:
 	_igor_t += dt
 	if _igor_t > 4.5 and igor_pic.mood != "":
 		igor_pic.set_mood("", false)
+
+# ---------------------------------------------------------------- rebinding keys
+
+var keys_panel: Control = null
+var _rebind: Array = []          # [station, default key, the button showing it] while waiting for a key
+
+func _open_keys() -> void:
+	## your own desk's actions and their keys; tap one, press a new key
+	if keys_panel != null:
+		keys_panel.queue_free()
+	keys_panel = Control.new()
+	keys_panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	keys_panel.set_meta("overlay", true)
+	keys_panel.z_index = 50
+	add_child(keys_panel)
+	var dim: ColorRect = ColorRect.new()
+	dim.color = Color(0.1, 0.07, 0.05, 0.6)
+	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	keys_panel.add_child(dim)
+	var cc: CenterContainer = CenterContainer.new()
+	cc.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	keys_panel.add_child(cc)
+	var w: Array = UIK.window("KEYS", "navy", "menu")
+	(w[0] as Control).custom_minimum_size = Vector2(620, 0)
+	cc.add_child(w[0])
+	var b: VBoxContainer = w[1]
+	var mine: Array = Net.last_snapshot.get("seats", [])
+	var grid: GridContainer = GridContainer.new()
+	grid.columns = 2
+	grid.add_theme_constant_override("h_separation", 14)
+	grid.add_theme_constant_override("v_separation", 6)
+	var any: bool = false
+	for st in mine:
+		if not Keys.ACTIONS.has(str(st)):
+			continue
+		any = true
+		for act in Keys.ACTIONS[str(st)]:
+			var l: Label = UIK.label("%s: %s" % [K.seat_name(str(st)), str(act[1])], 20)
+			l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			grid.add_child(l)
+			var kb: Button = UIK.btn(Keys.hint(str(st), act[0]), "cream", Callable(), "", 20)
+			kb.custom_minimum_size = Vector2(150, 0)
+			kb.pressed.connect(func():
+				_rebind = [str(st), act[0], kb]
+				kb.text = "PRESS A KEY...")
+			grid.add_child(kb)
+	if any:
+		b.add_child(grid)
+	else:
+		b.add_child(UIK.para("Take a seat to set its keys.", 20))
+	var r: HBoxContainer = UIK.hbox(10)
+	b.add_child(r)
+	r.add_child(UIK.btn("Reset to defaults", "cream", func():
+		Keys.reset()
+		_keys_changed()
+		_open_keys(), "", 18))
+	var done: Button = UIK.btn("Done", "green", func():
+		_rebind = []
+		keys_panel.queue_free()
+		keys_panel = null, "check", 20)
+	done.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	r.add_child(done)
+
+func _input(e: InputEvent) -> void:
+	# waiting for the new key for an action
+	if _rebind.is_empty() or not (e is InputEventKey) or not (e as InputEventKey).pressed or (e as InputEventKey).echo:
+		return
+	get_viewport().set_input_as_handled()
+	var k: Key = (e as InputEventKey).physical_keycode
+	var kb: Button = _rebind[2]
+	if k == KEY_ESCAPE:
+		kb.text = Keys.hint(str(_rebind[0]), _rebind[1])
+	elif k in Keys.RESERVED:
+		kb.text = "TAKEN, TRY ANOTHER"
+		return
+	else:
+		Keys.bind(str(_rebind[0]), _rebind[1], k)
+		kb.text = Keys.hint(str(_rebind[0]), _rebind[1])
+		_keys_changed()
+	_rebind = []
+
+func _keys_changed() -> void:
+	for st in _all_stations():
+		(st as Station).refresh_keys()
 
 func _toggle_pause() -> void:
 	pause_panel.visible = not pause_panel.visible
@@ -213,7 +439,10 @@ func _unhandled_input(e: InputEvent) -> void:
 			return
 		var mine: Array = Net.last_snapshot.get("seats", [])
 		if k == KEY_F and mine.size() > 1:
-			_flip()
+			if K.combined(mine):
+				_set_focus(str(mine[1]) if _focus == str(mine[0]) else str(mine[0]))
+			else:
+				_flip()
 			get_viewport().set_input_as_handled()
 			return
 		if k == KEY_M and Voice.active:
@@ -222,7 +451,10 @@ func _unhandled_input(e: InputEvent) -> void:
 			return
 		var idx: int = [KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7].find(k)
 		if idx >= 0 and idx < K.SEATS.size() and K.SEATS[idx] in mine:
-			Net.send("active", {"seat": K.SEATS[idx]})
+			if K.combined(mine):
+				_set_focus(K.SEATS[idx])
+			else:
+				Net.send("active", {"seat": K.SEATS[idx]})
 			get_viewport().set_input_as_handled()
 
 func _flip() -> void:
@@ -238,8 +470,21 @@ func _flip() -> void:
 	UIK.sfx("clack")
 	Net.send("active", {"seat": order[(i + 1) % order.size()]})
 
+func _set_focus(st: String) -> void:
+	## a combined screen: the keyboard goes to the half you last touched (or picked with F)
+	if not (st in _shown) or _shown.size() < 2:
+		return
+	if st != _focus:
+		UIK.sfx("clack")
+	_focus = st
+	for s2 in _shown:
+		_st(s2).set_keys_on(_desk != "" or s2 == _focus)
+
 func reset() -> void:
 	_active = ""
+	_focus = ""
+	_shown = []
+	_desk = ""
 	_seats_sig = ""
 	_phase = ""
 	_debrief_sig = ""
@@ -269,32 +514,73 @@ func on_snapshot(d: Dictionary) -> void:
 		_phase = phase
 		_clear_overlay()
 		_debrief_sig = ""
-		for st in stations.values():
+		for st in _all_stations():
 			(st as Station).release_all()
-	briefing_ui.visible = phase == "briefing"
-	board_ui.visible = phase == "board"
+	briefing_ui.visible = phase == "briefing" and not _portrait
+	board_ui.visible = phase == "board" and not _portrait
 	content.visible = phase != "briefing" and phase != "board"
+	hint_bar.visible = false
 	if phase == "briefing":
 		briefing_ui.apply(d.get("phase_data", {}), seats)
 	if phase == "board":
 		board_ui.apply(d.get("phase_data", {}))
 		return
+	_update_join(seats, phase)
 	var view_seat: String = act if act != "" else "captain"
-	if view_seat != _active:
-		_active = view_seat
-		cap_ui.visible = view_seat == "captain"
+	var both: bool = K.combined(seats)
+	var shown: Array = [str(seats[0]), str(seats[1])] if both else [view_seat]
+	var who: String = str(d.get("name", ""))
+	hint_bar.visible = both and content.visible
+	var vsig: String = ",".join(PackedStringArray(shown)) + "/" + who + "/" + str(act != "")
+	if vsig != _active:
+		_active = vsig
+		_shown = shown
+		var rid: String = K.role_of(shown[0]) if both else ""
+		_desk = rid if (rid != "" and rid == K.role_of(shown[1]) and desks.has(rid)) else ""
 		# the captain's bridge is the whole screen: its own title plaque, IGOR on the viewscreen, no dock
 		top_bar.visible = view_seat != "captain"
 		dock_bar.visible = view_seat != "captain"
-		for st in stations.keys():
-			stations[st].visible = st == view_seat
-			if st != view_seat:
-				(stations[st] as Station).release_all()
+		for st in wraps.keys():
+			wraps[st].visible = (st == "role_" + _desk) if _desk != "" else (st in shown)
+		var live: Array = []
+		for st1 in shown:
+			if _st(st1) != null:
+				live.append(_st(st1))
+		for stn in _all_stations():
+			if not (stn in live):
+				(stn as Station).release_all()
+		if both:
+			if not (_focus in shown):
+				_focus = view_seat if view_seat in shown else shown[0]
+			for st3 in shown:
+				# a role desk's keys never clash, so both halves listen; two odd stations take turns
+				_st(st3).set_keys_on(_desk != "" or st3 == _focus)
+				_st(st3).set_compact(true)
+			for i in 2:
+				UIK.set_chip(hint_bits[i].chip, K.seat_name(shown[i]).to_upper(), str(K.SEAT_INFO[shown[i]].color))
+		else:
+			_focus = ""
+			if stations.has(view_seat):
+				_st(view_seat).set_keys_on(true)
+				_st(view_seat).set_compact(false)
+		_fit_direction()
 		var info: Dictionary = K.SEAT_INFO.get(view_seat, {})
-		top_pic.set_who(view_seat)
-		top_role.text = str(info.get("name", "")).to_upper()
-		top_role.add_theme_color_override("font_color", K.seat_color(view_seat).darkened(0.2))
-		top_persona.text = str(info.get("persona", "")) + ("" if act != "" else "  (watching)")
+		top_pic.set_who(K.role_face(shown[0]) if _desk != "" else shown[0])
+		if both:
+			top_role.text = _pair_name(shown)
+			top_role.add_theme_color_override("font_color", UIK.c(K.role_color(_desk)).darkened(0.2) if _desk != "" else K.seat_color(shown[0]).darkened(0.2))
+		else:
+			top_role.text = str(info.get("name", "")).to_upper()
+			top_role.add_theme_color_override("font_color", K.seat_color(view_seat).darkened(0.2))
+		# your own name stays put whatever seat you're in (the seat's character comes with the seat)
+		if act == "":
+			top_persona.text = ("%s  (watching)" % who) if who != "" else "(watching)"
+		elif both:
+			top_persona.text = ("%s as %s" % [who, K.role_persona(shown[0])]) if _desk != "" else "%s: %s and %s" % [who, K.seat_name(shown[0]).to_lower(), K.seat_name(shown[1]).to_lower()]
+		elif who != "":
+			top_persona.text = "%s as %s" % [who, str(info.get("persona", ""))]
+		else:
+			top_persona.text = str(info.get("persona", ""))
 	var sig: String = ",".join(PackedStringArray(seats)) + "/" + act
 	if sig != _seats_sig:
 		_seats_sig = sig
@@ -326,10 +612,23 @@ func on_snapshot(d: Dictionary) -> void:
 		UIK.music("menu")
 		top_pic.set_mood("", false)
 	var v: Dictionary = d.get("view", {})
-	if view_seat == "captain":
+	if both and d.has("views"):
+		var views: Dictionary = d.get("views", {})
+		var hints: Dictionary = d.get("hints", {})
+		var odd: Dictionary = d.get("odd", {})
+		for i2 in shown.size():
+			var st4: String = shown[i2]
+			var c2: Dictionary = com.duplicate()
+			c2["hint"] = str(hints.get(st4, com.get("hint", "")))
+			c2["glitchy"] = bool(odd.get(st4, false))
+			_st(st4).apply(views.get(st4, {}), c2)
+			(hint_bits[i2].label as Label).text = str(c2.hint)
+			(hint_bits[i2].label as Label).tooltip_text = str(c2.hint)
+			(hint_bits[i2].odd as Control).visible = bool(c2.glitchy)
+	elif view_seat == "captain":
 		cap_ui.apply(v, com)
 	elif stations.has(view_seat):
-		(stations[view_seat] as Station).apply(v, com)
+		_st(view_seat).apply(v, com)
 	if phase == "debrief":
 		var pd: Dictionary = d.get("phase_data", {})
 		var dsig: String = "%s/%s" % [str(pd.get("title", "")), str(pd.get("can_continue", false))]
@@ -338,14 +637,35 @@ func on_snapshot(d: Dictionary) -> void:
 			_clear_overlay()
 			overlay = Screens.debrief(pd, func(): Net.send("next"), func(): Net.send("retry"), func(): Net.send("lobby"), func(): Net.send("shuffle"))
 			overlay.z_index = 25
+			overlay.visible = not _portrait
 			add_child(overlay)
 			move_child(overlay, pause_panel.get_index())
+
+func _fit_direction() -> void:
+	## a crew role's two desks: side by side on a wide screen, one above the other on a tall one
+	var vp: Vector2 = get_viewport_rect().size
+	var tall: bool = vp.y > vp.x
+	if _desk != "":
+		content.vertical = false
+		(desks[_desk] as RoleDesk).set_vertical(tall)
+	else:
+		content.vertical = _shown.size() == 2 and tall
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_RESIZED and content != null:
+		_fit_direction()
+
+func _pair_name(shown: Array) -> String:
+	var r: String = K.role_of(str(shown[0]))
+	if r != "" and r == K.role_of(str(shown[1])):
+		return K.role_name(r).to_upper()
+	return "%s + %s" % [K.seat_name(str(shown[0])).to_upper(), K.seat_name(str(shown[1])).to_upper()]
 
 func _build_dock(seats: Array, act: String) -> void:
 	for c in dock_seats.get_children():
 		c.queue_free()
-	if seats.size() <= 1:
-		return
+	if seats.size() <= 1 or K.combined(seats):
+		return     # one screen, or both of them on it: nothing to flip to
 	if seats.size() == 2:
 		# a pair: one big button that shows where you'd go
 		var other: String = str(seats[0]) if str(seats[1]) == act else str(seats[1])
@@ -394,6 +714,7 @@ func on_event(d: Dictionary) -> void:
 				"hit":
 					UIK.sfx("bonk")
 					Fx.shake(10.0)
+					Web.buzz(70)
 				"alarm":
 					UIK.sfx("alarm")
 				"ding":
@@ -418,7 +739,7 @@ func on_event(d: Dictionary) -> void:
 
 func toast(text: String, kind: String = "info", _who: String = "") -> void:
 	var col: String = {"bad": "red", "good": "green", "step": "mustard", "info": "cream"}.get(kind, "cream")
-	if _active == "captain":
+	if "captain" in _shown:
 		cap_ui.toast(text, col)
 	if text.length() > 34:
 		text = text.left(33) + "…"

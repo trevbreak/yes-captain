@@ -1,6 +1,6 @@
 class_name LobbyUI
 extends Control
-## The Crew Room: the host chooses what to fly, everyone takes a seat (or a pair of seats), readies up, and
+## The Crew Room: the host chooses what to fly, everyone takes one of the four seats, readies up, and
 ## the host says go.
 
 signal leave_pressed
@@ -19,17 +19,27 @@ var shift_cards: Label
 var shift_blurb: Label
 var shift_lock: Label
 var skip_btn: Button
+var hard_btn: Button
 var igor_lbl: Label
 var mission_rows: Dictionary = {}
 var seat_cards: Dictionary = {}
-var pair_btns: Dictionary = {}
 var people: HBoxContainer
-var ready_btn: Button
 var cta: Button
 var wait_lbl: Label
 var _last: Dictionary = {}
 var _people_sig: String = ""
 var _addr: String = ""
+var main_box: BoxContainer
+var seat_grid: GridContainer
+var foot_box: BoxContainer
+var flying_win: Control
+var seats_win: Control
+var join_box: PanelContainer
+var qr_pic: TextureRect
+var join_url_lbl: Label
+var join_code_lbl: Label
+var join_how: Label
+var _qr_sig: String = ""
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -39,33 +49,34 @@ func _ready() -> void:
 	m.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(m)
 	# ---- top
-	var top: HBoxContainer = UIK.hbox(10)
+	var top: HFlowContainer = HFlowContainer.new()
+	top.add_theme_constant_override("h_separation", 10)
+	top.add_theme_constant_override("v_separation", 6)
 	root.add_child(top)
 	title_lbl = UIK.title("CREW ROOM", 46)
 	top.add_child(title_lbl)
-	top.add_child(UIK.spacer(true))
 	room_chip = UIK.chip("", "steel", "crew", 18)
 	room_chip.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	top.add_child(room_chip)
-	invite_btn = UIK.btn("Copy invite", "mustard", _copy_invite, "flag", 18)
-	invite_btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	invite_btn.tooltip_text = "Copy a link your friends can open to land in this crew room"
-	top.add_child(invite_btn)
 	voice_btn = UIK.toggle("Voice chat", "purple", func(on: bool): Net.send("opt", {"key": "voice", "val": on}), "speaker", 18)
 	voice_btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	voice_btn.tooltip_text = "On: everyone's microphone is live, for crews in different places.\nOff: you're all in the same room. Just shout."
 	top.add_child(voice_btn)
 	top.add_child(Voice.Bar.new())
-	var lb: Button = UIK.btn("Leave", "red", func(): leave_pressed.emit(), "back", 18)
+	var lb: Button = UIK.btn("Leave", "red", func():
+		UIK.confirm(self, "LEAVE THE CREW?", "Your seat goes to a robot. You can come back with the invite link.", "Leave", func(): leave_pressed.emit()), "back", 18)
 	lb.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	top.add_child(lb)
 	# ---- main
-	var main: HBoxContainer = UIK.hbox(12)
+	var main: BoxContainer = BoxContainer.new()
+	main.add_theme_constant_override("separation", 12)
 	main.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	root.add_child(main)
+	main_box = main
 	var cw: Array = UIK.window("WHAT ARE WE FLYING?", "red", "flag")
 	cw[0].custom_minimum_size = Vector2(340, 0)
 	main.add_child(cw[0])
+	flying_win = cw[0]
 	var cwb: VBoxContainer = cw[1]
 	cwb.add_theme_constant_override("separation", 6)
 	var tabs: HBoxContainer = UIK.hbox(6)
@@ -107,45 +118,65 @@ func _ready() -> void:
 	shift_box.add_child(shift_cards)
 	shift_lock = UIK.para("", 20, UIK.c("red"))
 	shift_box.add_child(shift_lock)
+	hard_btn = UIK.toggle("Hard mode", "red", func(on: bool): Net.send("opt", {"key": "hard", "val": on}), "fire", 18)
+	hard_btn.tooltip_text = "Off: a steady pace with time to talk, and no comms dial or torpedoes on the Shift.\nOn: the comms dial, torpedoes and weak spots, and trouble arrives twice as fast."
+	cwb.add_child(hard_btn)
 	# ---- seats
 	var crw: Array = UIK.window("TAKE A SEAT", "blue", "crew")
 	crw[0].size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	main.add_child(crw[0])
+	seats_win = crw[0]
 	var cb: VBoxContainer = crw[1]
 	cb.add_theme_constant_override("separation", 8)
-	var caprow: HBoxContainer = UIK.hbox(12)
-	cb.add_child(caprow)
-	var cap: SeatCard = SeatCard.new("captain")
-	cap.custom_minimum_size = Vector2(300, 0)
-	cap.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	caprow.add_child(cap)
-	seat_cards["captain"] = cap
-	var tip: Label = UIK.para("The Captain sees everything and touches nothing. Everyone else gets one station. Small crew? Take a PAIR and flip between its two screens. Robots fill whatever is left.", 18, K.pal("ink_soft"))
-	tip.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	tip.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	caprow.add_child(tip)
-	var cols: HBoxContainer = UIK.hbox(10)
-	cb.add_child(cols)
-	for pair in K.PAIRS:
-		var col: VBoxContainer = UIK.vbox(6)
-		col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		cols.add_child(col)
-		var pb: Button = UIK.btn("%s: take both" % str(pair.name), "cream", func(): _take_pair(pair), "", 17)
-		pb.tooltip_text = "%s: one player, two screens. Press F in the game to flip." % str(pair.blurb)
-		col.add_child(pb)
-		pair_btns[pair.id] = pb
-		for s in pair.seats:
-			var card: SeatCard = SeatCard.new(str(s))
-			col.add_child(card)
-			seat_cards[s] = card
-	cb.add_child(UIK.spacer(true))
+	var tip: Label = UIK.para("Four seats: the Captain and three crew. The Captain sees everything and touches nothing; each crew role works two stations on one screen. Fewer than four of you? Robots take the empty roles.", 18, K.pal("ink_soft"))
+	cb.add_child(tip)
+	var cards: GridContainer = GridContainer.new()
+	cards.columns = 4
+	cards.add_theme_constant_override("h_separation", 10)
+	cards.add_theme_constant_override("v_separation", 10)
+	cb.add_child(cards)
+	seat_grid = cards
+	for r in K.CREW:
+		var card: SeatCard = SeatCard.new(str(r))
+		cards.add_child(card)
+		seat_cards[r] = card
+	# ---- how to get in: big enough to read from the sofa, and a code to scan
+	join_box = UIK.panel("panel_small", [6, 4, 6, 4])
+	join_box.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	cb.add_child(join_box)
+	var jr: HBoxContainer = UIK.hbox(18)
+	jr.alignment = BoxContainer.ALIGNMENT_CENTER
+	join_box.add_child(jr)
+	qr_pic = TextureRect.new()
+	qr_pic.custom_minimum_size = Vector2(170, 170)
+	qr_pic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	qr_pic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	qr_pic.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	qr_pic.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	jr.add_child(qr_pic)
+	var jv: VBoxContainer = UIK.vbox(2)
+	jv.alignment = BoxContainer.ALIGNMENT_CENTER
+	jr.add_child(jv)
+	join_how = UIK.head("SCAN TO JOIN, OR GO TO", 17, K.pal("ink_soft"))
+	jv.add_child(join_how)
+	join_url_lbl = UIK.head("", 22)
+	jv.add_child(join_url_lbl)
+	jv.add_child(UIK.head("AND TYPE THE CODE", 17, K.pal("ink_soft")))
+	join_code_lbl = UIK.title("", 72, UIK.c("red"))
+	jv.add_child(join_code_lbl)
+	invite_btn = UIK.btn("Copy invite link", "mustard", _copy_invite, "flag", 18)
+	invite_btn.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	invite_btn.tooltip_text = "Copy a link your friends can open to land in this crew room"
+	jv.add_child(invite_btn)
 	var sp: HBoxContainer = UIK.speech("", "igor", "IGOR", 62, 19)
 	igor_lbl = sp.find_child("text", true, false)
 	cb.add_child(sp)
 	# ---- footer
-	var foot: HBoxContainer = UIK.hbox(10)
+	var foot: BoxContainer = BoxContainer.new()
+	foot.add_theme_constant_override("separation", 10)
 	foot.custom_minimum_size = Vector2(0, 60)
 	root.add_child(foot)
+	foot_box = foot
 	people = UIK.hbox(6)
 	people.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	people.clip_contents = true
@@ -155,12 +186,37 @@ func _ready() -> void:
 	wait_lbl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	wait_lbl.custom_minimum_size = Vector2(240, 0)
 	foot.add_child(wait_lbl)
-	ready_btn = UIK.toggle("I'm ready", "green", func(on: bool): Net.send("lobby_ready", {"on": on}), "check", 24)
-	ready_btn.custom_minimum_size = Vector2(190, 56)
-	foot.add_child(ready_btn)
 	cta = UIK.btn("START", "green", func(): Net.send("start"), "play", 24)
 	cta.custom_minimum_size = Vector2(300, 56)
 	foot.add_child(cta)
+
+func set_portrait(p: bool) -> void:
+	## a phone held upright: seats first (that's what a guest is here for), then the mission, all in one column
+	main_box.vertical = p
+	foot_box.vertical = p
+	seat_grid.columns = 2 if p else 4
+	main_box.move_child(seats_win, 0 if p else 1)
+	flying_win.custom_minimum_size = Vector2(0, 420) if p else Vector2(340, 0)
+	qr_pic.custom_minimum_size = Vector2(130, 130) if p else Vector2(170, 170)
+
+func _update_join(code: String) -> void:
+	## the big code and the QR code of the invite link
+	var url: String = Web.invite_link(code) if code != "" else ""
+	join_box.visible = code != "" or _addr != ""
+	if code != "":
+		join_url_lbl.text = Web.site_name()
+		join_code_lbl.text = code
+		join_how.text = "SCAN TO JOIN, OR GO TO"
+		qr_pic.visible = true
+	else:
+		join_url_lbl.text = _addr
+		join_code_lbl.text = ""
+		join_how.text = "ON THIS NETWORK, JOIN A SERVER AT"
+		qr_pic.visible = false
+	if url != _qr_sig:
+		_qr_sig = url
+		var q: Qr = Qr.make(url) if url != "" else null
+		qr_pic.texture = ImageTexture.create_from_image(q.to_image(4, 3)) if q != null else null
 
 func set_addresses(listening: bool, port: int) -> void:
 	## a game hosted on this computer (not a server room)
@@ -176,19 +232,6 @@ func _copy_invite() -> void:
 	var code: String = str(_last.get("room", {}).get("code", ""))
 	Web.copy(Web.invite_link(code) if code != "" else _addr)
 	wait_lbl.text = "Copied! Paste it to your friends."
-
-func _take_pair(pair: Dictionary) -> void:
-	var me: int = Net.my_id
-	var seats: Dictionary = _last.get("seats", {})
-	var mine: bool = true
-	for s in pair.seats:
-		if int(seats.get(s, {}).get("owner", 0)) != me:
-			mine = false
-	if mine:
-		for s2 in pair.seats:
-			Net.send("release", {"seat": s2})
-	else:
-		Net.send("claim", {"seats": pair.seats})
 
 func update_lobby(d: Dictionary) -> void:
 	_last = d
@@ -206,8 +249,8 @@ func update_lobby(d: Dictionary) -> void:
 	else:
 		title_lbl.text = "CREW ROOM"
 		UIK.set_chip(room_chip, "ROBOT CREW", "steel")
-	invite_btn.visible = code != "" or _addr != ""
-	invite_btn.text = "COPY INVITE" if code != "" else "COPY ADDRESS"
+	invite_btn.text = "COPY INVITE LINK" if code != "" else "COPY ADDRESS"
+	_update_join(code)
 	voice_btn.visible = code != ""
 	voice_btn.mouse_filter = Control.MOUSE_FILTER_STOP if is_admin else Control.MOUSE_FILTER_IGNORE
 	voice_btn.set_pressed_no_signal(bool(d.get("voice", false)))
@@ -222,6 +265,10 @@ func update_lobby(d: Dictionary) -> void:
 		if not bool(mi.unlocked):
 			all_open = false
 	skip_btn.visible = is_admin and not all_open
+	var hard: bool = bool(d.get("hard", false))
+	hard_btn.set_pressed_no_signal(hard)
+	hard_btn.text = "HARD MODE: ON" if hard else "HARD MODE: OFF"
+	hard_btn.mouse_filter = Control.MOUSE_FILTER_STOP if is_admin else Control.MOUSE_FILTER_IGNORE
 	train_tab.set_pressed_no_signal(mode == "career")
 	shift_tab.set_pressed_no_signal(mode == "shift")
 	train_tab.mouse_filter = Control.MOUSE_FILTER_STOP if is_admin else Control.MOUSE_FILTER_IGNORE
@@ -233,7 +280,8 @@ func update_lobby(d: Dictionary) -> void:
 	shift_info.text = "Rent due: £%d\nShifts flown: %d     Best takings: £%d" % [int(sh.get("rent", 0)), int(sh.get("shifts", 0)), int(sh.get("best", 0))]
 	var latest: Array = sh.get("latest", [])
 	if bool(sh.get("full", false)):
-		shift_blurb.text = "Every job is dealt at random: a task, a place and a snag or two, from everything in the game. The ship glitches as you go. Pick from the job board, fly it, get paid. The board has an easy job, a middling one and a spicy one."
+		shift_blurb.text = "Every job is dealt at random: a task, a place and a snag or two, from everything in the game. The ship glitches as you go. Pick from the job board, fly it, get paid. The board has an easy job, a middling one and a spicy one." \
+			+ (" HARD MODE: radio calls, torpedoes, and no time to breathe." if hard else "")
 		shift_cards.text = "The whole deck: %d glitches, %d places, %d snags. No two shifts alike." % [Glitches.DEFS.size(), Deck.PLACES.size(), Deck.TWISTS.size()]
 	else:
 		shift_blurb.text = "Jobs are dealt from your deck: a task, a place and a snag or two. The ship glitches as you go. Pick from the job board, fly it, get paid. Every finished shift adds one new card."
@@ -241,19 +289,14 @@ func update_lobby(d: Dictionary) -> void:
 	shift_lock.text = "" if bool(sh.get("open", false)) else "Fly %d training missions to open the Shift." % int(sh.get("needs", 2))
 	igor_lbl.text = str(d.get("igor", ""))
 	var seats: Dictionary = d.get("seats", {})
-	for s in seat_cards.keys():
-		(seat_cards[s] as SeatCard).update(seats.get(s, {}), me, is_admin)
-	for pair in K.PAIRS:
-		var pb: Button = pair_btns[pair.id]
-		var mine: int = 0
-		var free: int = 0
-		for s2 in pair.seats:
-			var o: int = int(seats.get(s2, {}).get("owner", 0))
-			mine += int(o == me)
-			free += int(o == 0 or o == me)
-		pb.text = ("%s: LEAVE BOTH" if mine == 2 else "%s: TAKE BOTH") % str(pair.name).to_upper()
-		pb.disabled = free < 2
-		UIK.style_btn(pb, "mustard" if mine == 2 else "cream")
+	for r in seat_cards.keys():
+		# a role's two stations always go together, so its first station speaks for it
+		(seat_cards[r] as SeatCard).update(seats.get(str(K.role_seats(str(r))[0]), {}), me, is_admin)
+	# practice on your own: IGOR takes the Captain's chair if you don't
+	if bool(d.get("robot_captain", false)):
+		var cc: SeatCard = seat_cards["captain"]
+		if cc._state == "open":
+			UIK.set_chip(cc.status, "IGOR", "steel")
 	# who's here
 	var peers: Dictionary = d.get("peers", {})
 	var sig: String = JSON.stringify(peers) + str(is_admin) + str(d.get("admin", 0))
@@ -283,21 +326,14 @@ func update_lobby(d: Dictionary) -> void:
 	var prob: String = str(d.get("problem", ""))
 	var info: Dictionary = Missions.INFO.get(cur, {})
 	cta.visible = is_admin
-	ready_btn.visible = not is_admin
-	ready_btn.disabled = my_seats.is_empty()
-	var am_ready: bool = bool(peers.get(me, {}).get("ready", false))
-	ready_btn.set_pressed_no_signal(am_ready)
-	ready_btn.text = "READY!" if am_ready else "I'M READY"
 	cta.text = "START THE SHIFT" if mode == "shift" else "START MISSION %d" % int(info.get("num", 1))
 	cta.disabled = prob != ""
 	if is_admin:
 		wait_lbl.text = prob
 	elif my_seats.is_empty():
 		wait_lbl.text = "Take a seat (or just watch)."
-	elif not am_ready:
-		wait_lbl.text = "Press ready when you are."
 	else:
-		wait_lbl.text = "Waiting for the host to start..."
+		wait_lbl.text = "You're in. Waiting for the host to start..."
 
 class MissionRow extends Button:
 	## one mission in the training list: number, title, what's new, and the stars earned
@@ -353,6 +389,7 @@ class MissionRow extends Button:
 				stars_box.add_child(UIK.icon("star", 20, UIK.c("red") if i < int(mi.stars) else Color(UIK.ink(), 0.2)))
 
 class SeatCard extends PanelContainer:
+	## one of the four seats: the Captain, or a crew role (two stations, one player)
 	var seat: String
 	var status: PanelContainer
 	var action: Button
@@ -365,23 +402,24 @@ class SeatCard extends PanelContainer:
 	func _ready() -> void:
 		add_theme_stylebox_override("panel", Art.box("panel_small", Color.WHITE, [-8, -8, -8, -10]))
 		size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		var h: HBoxContainer = UIK.hbox(6)
-		add_child(h)
-		var pr: TextureRect = UIK.portrait(seat, 64)
-		pr.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		pr.tooltip_text = "%s\n\"%s\"\n%s" % [K.persona(seat), K.SEAT_INFO[seat].trait, K.SEAT_INFO[seat].job]
+		var v: VBoxContainer = UIK.vbox(4)
+		add_child(v)
+		var faces: HBoxContainer = UIK.hbox(-12)
+		faces.alignment = BoxContainer.ALIGNMENT_CENTER
+		v.add_child(faces)
+		var pr: TextureRect = UIK.portrait(K.role_face(seat), 64)
+		pr.tooltip_text = K.role_persona(seat)
 		pr.mouse_filter = Control.MOUSE_FILTER_PASS
-		h.add_child(pr)
-		var v: VBoxContainer = UIK.vbox(2)
-		v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		h.add_child(v)
-		var top: HBoxContainer = UIK.hbox(4)
-		v.add_child(top)
-		var nm: Label = UIK.head(K.seat_name(seat), 19, K.seat_color(seat).darkened(0.25))
-		nm.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		top.add_child(nm)
+		faces.add_child(pr)
+		var nm: Label = UIK.head(K.role_name(seat).to_upper(), 21, UIK.c(K.role_color(seat)).darkened(0.25), HORIZONTAL_ALIGNMENT_CENTER)
+		v.add_child(nm)
+		var sub: String = "Sees everything. Touches nothing." if seat == "captain" else \
+			"%s + %s" % [K.seat_name(str(K.role_seats(seat)[0])), K.seat_name(str(K.role_seats(seat)[1]))]
+		v.add_child(UIK.label(sub, 15, K.pal("ink_soft"), HORIZONTAL_ALIGNMENT_CENTER))
 		status = UIK.chip("Open", "cream", "", 13)
-		top.add_child(status)
+		status.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		v.add_child(status)
+		v.add_child(UIK.spacer(false))
 		var br: HBoxContainer = UIK.hbox(4)
 		v.add_child(br)
 		action = UIK.btn("Take", "green", _act, "", 17)
@@ -389,11 +427,19 @@ class SeatCard extends PanelContainer:
 		br.add_child(action)
 		if seat != "captain":
 			robot = UIK.toggle("", "steel", func(on: bool): Net.send("opt", {"key": "bot_on", "val": {"seat": seat, "on": on}}), "robot", 17)
-			robot.tooltip_text = "Fill with a robot when nobody takes this seat"
+			robot.tooltip_text = "Fill with a robot when nobody takes this role"
+			robot.custom_minimum_size = Vector2(64, 0)
 			br.add_child(robot)
+		var tip: String = str(K.SEAT_INFO["captain"].job) if seat == "captain" else "%s\n%s" % [K.role_persona(seat), str(K.ROLES[seat].blurb)]
+		tooltip_text = tip
 
 	func _act() -> void:
-		Net.send("release" if _state == "mine" else "claim", {"seat": seat})
+		if _state == "mine":
+			Net.send("release", {"seat": seat})
+		else:
+			# one seat each: taking this one gives up whatever you had
+			Net.send("release_all")
+			Net.send("claim", {"seat": seat})
 
 	func update(d: Dictionary, me: int, is_admin: bool) -> void:
 		var owner_id: int = int(d.get("owner", 0))

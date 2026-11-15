@@ -4,7 +4,7 @@ extends RefCounted
 
 const RADAR_RANGE: float = 520.0
 const SHIP_R: float = 20.0
-const BULLET_SPEED: float = 340.0
+const BULLET_SPEED: float = 640.0     # our laser bolts: quick, straight, and gone after about a radar-width
 const TRACTOR_RANGE: float = 150.0
 const SCAN_TIME: float = 1.6
 
@@ -15,6 +15,7 @@ var shots: Array = []
 var fx: Array = []                # short-lived visual events for renderers: {kind, pos, t}
 var events: Array = []            # [type, data] drained by the host
 var features: Dictionary = {}
+var hands: Dictionary = {}      # seat -> the human working it (set by the host each step; robots aren't in it)
 var mission: Mission = null
 var rng: RandomNumberGenerator = RandomNumberGenerator.new()
 var next_id: int = 1
@@ -61,6 +62,10 @@ func clear() -> void:
 
 func feat(f: String) -> bool:
 	return bool(features.get(f, false))
+
+func calm() -> float:
+	## how much longer the enemies wait between shots: hard mode is the old breakneck pace
+	return 1.0 if feat("hard") else 1.45
 
 func emit(type: String, d: Dictionary = {}) -> void:
 	events.append([type, d])
@@ -221,7 +226,7 @@ func _weapons(dt: float) -> void:
 	s.gun_cd = maxf(0.0, s.gun_cd - dt)
 	if s.firing and s.ok("gun") and s.gun_cd <= 0.0:
 		var dir: Vector2 = Vector2.from_angle(s.turret_world() + _gun_skew())
-		shots.append({"pos": s.pos + dir * 22.0, "vel": dir * BULLET_SPEED + s.vel * 0.5, "from": "us", "dmg": 10.0, "life": 1.4, "kind": "bullet"})
+		shots.append({"pos": s.pos + dir * 22.0, "vel": dir * BULLET_SPEED + s.vel * 0.5, "from": "us", "dmg": 10.0, "life": 0.95, "kind": "laser"})
 		s.gun_cd = 0.3 / maxf(0.3, s.power_factor("weapons", features)) / s.mod("gun_rate")
 		stats.shots += 1
 		if feat("heat"):
@@ -253,6 +258,7 @@ func fire_torpedo() -> bool:
 func _shots(dt: float) -> void:
 	var s: Ship = ship
 	for sh in shots:
+		var was: Vector2 = sh.pos
 		sh.pos += sh.vel * dt
 		sh.life -= dt
 		if sh.life <= 0.0:
@@ -261,7 +267,10 @@ func _shots(dt: float) -> void:
 			for e in ents:
 				if not e.alive or not e.shootable:
 					continue
-				if sh.pos.distance_to(e.pos) <= e.r + (6.0 if sh.kind == "torpedo" else 3.0):
+				# a laser bolt covers a lot of ground in a step: test the whole stretch, so it can't hop over a drone
+				var near: Vector2 = Geometry2D.get_closest_point_to_segment(e.pos, was, sh.pos)
+				if near.distance_to(e.pos) <= e.r + (6.0 if sh.kind == "torpedo" else 3.0):
+					sh.pos = near
 					sh.life = 0.0
 					_hit_ent(e, sh)
 					break
@@ -404,7 +413,7 @@ func _ai_drone(e: Dictionary, dt: float) -> void:
 	e.pos += e.vel * dt
 	e.cd = float(e.cd) - dt
 	if e.cd <= 0.0 and d < 480.0 and e.stun <= 0.0:
-		e.cd = rng.randf_range(3.6, 5.2)
+		e.cd = rng.randf_range(3.6, 5.2) * calm()
 		shoot_at_ship(e.pos, 140.0, 8.0)
 
 func _ai_patrol(e: Dictionary, dt: float) -> void:
@@ -421,7 +430,7 @@ func _ai_patrol(e: Dictionary, dt: float) -> void:
 	if e.charge > 0.0:
 		e.charge = float(e.charge) - dt
 		if e.charge <= 0.0:
-			e.cd = rng.randf_range(9.0, 12.0) if e.get("lazy", false) else rng.randf_range(5.0, 6.5)
+			e.cd = (rng.randf_range(9.0, 12.0) if e.get("lazy", false) else rng.randf_range(5.0, 6.5)) * calm()
 			for k in [-0.18, 0.0, 0.18]:
 				shoot_at_ship(e.pos, 170.0, 9.0, "blob", k)
 
@@ -439,7 +448,7 @@ func _ai_cruiser(e: Dictionary, dt: float) -> void:
 	if e.charge > 0.0:
 		e.charge = float(e.charge) - dt
 		if e.charge <= 0.0:
-			e.cd = rng.randf_range(6.0, 7.5)
+			e.cd = rng.randf_range(6.0, 7.5) * calm()
 			for k in [-0.3, -0.15, 0.0, 0.15, 0.3]:
 				shoot_at_ship(e.pos + Vector2.from_angle(float(e.heading)) * 40.0, 150.0, 8.0, "blob", k)
 

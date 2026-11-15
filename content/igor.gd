@@ -157,7 +157,7 @@ const LINES: Dictionary = {
 	],
 	"collected": [
 		"{name} is aboard. Good catch. IGOR did not doubt. IGOR doubted a little.",
-		"Got it. {shd} has hauled in {name}. IGOR will find somewhere to put it. On {who}'s side.",
+		"Got it. {who} has hauled in {name}. IGOR will find somewhere to put it. On {shd}'s side.",
 	],
 	"bonus": [
 		"Stray pod aboard. That is {amount} extra. Finders keepers. This is actual space law.",
@@ -268,6 +268,10 @@ const LINES: Dictionary = {
 	"new_card": [
 		"Something new has been added to your troubles. IGOR will explain at the next briefing. IGOR is looking forward to it.",
 	],
+	"back": [
+		"{who} is back. IGOR did not notice they had gone. IGOR noticed.",
+		"{who} has reconnected. The seat was kept warm. By a robot. Robots are not warm.",
+	],
 	"joined": [
 		"{who} has joined. IGOR has opened a file. It is empty. IGOR expects that to change.",
 		"{who} is aboard. One more pair of hands. IGOR counts hands, not skills.",
@@ -313,5 +317,9 @@ static func fill(s: String, ctx: Dictionary) -> String:
 	return s
 
 static func review(seat: String) -> String:
+	## a crew role is reviewed on either of its two jobs
 	var arr: Array = REVIEWS.get(seat, [])
+	if arr.is_empty() and K.ROLES.has(seat):
+		for st in K.ROLES[seat].seats:
+			arr.append_array(REVIEWS.get(st, []))
 	return str(arr[randi() % arr.size()]) if not arr.is_empty() else ""

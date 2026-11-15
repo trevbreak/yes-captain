@@ -50,7 +50,7 @@ static func _awards(b: VBoxContainer, aw: Array, cols: int = 2, w: float = 390.0
 	for a in aw:
 		var h: HBoxContainer = UIK.hbox(8)
 		h.custom_minimum_size = Vector2(w, 0)
-		h.add_child(UIK.portrait(str(a.seat), 46))
+		h.add_child(UIK.portrait(K.role_face(str(a.seat)), 46))
 		var v: VBoxContainer = UIK.vbox(-4)
 		v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		v.add_child(UIK.head(str(a.title), 18, UIK.c("red")))
@@ -186,7 +186,7 @@ static func _job_debrief(d: Dictionary, on_next: Callable, on_lobby: Callable, o
 			right.add_child(UIK.head("IGOR'S STAFF REVIEW", 19, K.pal("ink_soft")))
 			for r in rv:
 				var h: HBoxContainer = UIK.hbox(6)
-				h.add_child(UIK.portrait(str(r.seat), 34))
+				h.add_child(UIK.portrait(K.role_face(str(r.seat)), 34))
 				var t: Label = UIK.para("%s: %s" % [str(r.who), str(r.text)], 18)
 				t.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 				h.add_child(t)
@@ -301,7 +301,7 @@ class JobBoard extends Control:
 				if who.is_empty():
 					row.add_child(UIK.label("no votes yet", 16, Color(UIK.ink(), 0.35)))
 				for v in who:
-					var pr: TextureRect = UIK.portrait(str(v.seat), 34)
+					var pr: TextureRect = UIK.portrait(K.role_face(str(v.seat)), 34)
 					pr.tooltip_text = "%s wants this one" % str(v.name)
 					pr.mouse_filter = Control.MOUSE_FILTER_PASS
 					row.add_child(pr)
@@ -344,14 +344,14 @@ class JobBoard extends Control:
 			blurb.vertical_alignment = VERTICAL_ALIGNMENT_TOP
 			b.add_child(blurb)
 			var pl: Dictionary = places.get(str(o.place), {})
-			var pc: PanelContainer = UIK.chip(str(pl.get("name", o.place)), "sky" if false else "paper2", "map", 15)
+			var pc: PanelContainer = UIK.chip(str(pl.get("name", o.place)) + ("  ?" if UIK.touch_ui else ""), "paper2", "map", 15)
 			pc.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 			pc.tooltip_text = str(pl.get("text", ""))
 			pc.mouse_filter = Control.MOUSE_FILTER_PASS
 			b.add_child(pc)
 			for x in o.get("twists", []):
 				var tw: Dictionary = twists.get(str(x), {})
-				var tc: PanelContainer = UIK.chip(str(tw.get("name", x)), "lilac", "warning", 15)
+				var tc: PanelContainer = UIK.chip(str(tw.get("name", x)) + ("  ?" if UIK.touch_ui else ""), "lilac", "warning", 15)
 				tc.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 				tc.tooltip_text = str(tw.get("text", ""))
 				tc.mouse_filter = Control.MOUSE_FILTER_PASS

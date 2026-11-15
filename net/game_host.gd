@@ -48,14 +48,27 @@ func _init() -> void:
 
 # ================================================================ peers & seats
 
-func add_peer(id: int, pname: String) -> void:
+func add_peer(id: int, pname: String, token: String = "") -> void:
+	## a player arrives. Somebody coming back (same browser token, or same name after they dropped) gets their
+	## seats back. The token also catches a phone whose old connection the server hasn't noticed is dead yet.
 	var seats: Array = []
 	var old_id: int = 0
-	for pid in peers.keys():
-		if peers[pid].get("gone", false) and peers[pid].name == pname:
-			old_id = pid
-	if old_id != 0:
+	if token != "":
+		for pid in peers.keys():
+			if pid != id and str(peers[pid].get("token", "")) == token:
+				old_id = pid
+	if old_id == 0:
+		for pid2 in peers.keys():
+			if peers[pid2].get("gone", false) and peers[pid2].name == pname:
+				old_id = pid2
+	var back: bool = old_id != 0
+	if back:
 		seats = peers[old_id].seats.duplicate()
+		pname = str(peers[old_id].name)
+		if admin == old_id:
+			admin = id
+		if briefing.has("ready") and (briefing.ready as Dictionary).has(old_id):
+			briefing.ready[id] = briefing.ready[old_id]
 		peers.erase(old_id)
 		for s in seats.duplicate():
 			if not seat_owner.has(s) or int(seat_owner[s]) == old_id:
@@ -63,8 +76,9 @@ func add_peer(id: int, pname: String) -> void:
 			else:
 				seats.erase(s)
 	pname = _unique_name(pname, id)
-	peers[id] = {"name": pname, "seats": seats, "active": seats[0] if not seats.is_empty() else "", "gone": false, "ready": false}
-	_lobby_say("joined", {"who": pname})
+	peers[id] = {"name": pname, "seats": seats, "active": seats[0] if not seats.is_empty() else "", "gone": false, "ready": false,
+		"token": token}
+	_lobby_say("back" if back else "joined", {"who": pname})
 	_sync_bots()
 	lobby_changed.emit()
 	_send_lobby()
@@ -138,12 +152,22 @@ func start_problem() -> String:
 	if humans.is_empty():
 		return ""
 	var cap: int = int(seat_owner.get("captain", 0))
-	if cap == 0 or not peers.has(cap) or peers[cap].get("gone", false):
+	if (cap == 0 or not peers.has(cap) or peers[cap].get("gone", false)) and humans.size() > 1:
 		return "Somebody has to be the Captain."
-	for pid in humans:
-		if pid != admin and not peers[pid].seats.is_empty() and not bool(peers[pid].get("ready", false)):
-			return "Waiting for %s to be ready." % str(peers[pid].name)
+	# taking a seat is all a guest does here: the one "ready" is on the briefing, before every launch
 	return ""
+
+func claim_role(peer: int, seat: String) -> bool:
+	## take a seat the way players do: a crew role (or any station of one) comes as both its stations, or neither
+	var seats: Array = K.role_seats(seat)
+	if seats.is_empty():
+		return false
+	var from_robot: bool = phase != "lobby" and bots.has(str(seats[0]))
+	var ok: bool = claim_all(peer, seats)
+	if ok and from_robot and peers.has(peer):
+		# a late arrival takes over mid-shift: the robot hands over, and everyone hears about it
+		_event(0, {"t": "toast", "text": "%s takes over the %s" % [str(peers[peer].name), K.role_name(K.role_of(str(seats[0])))], "kind": "good"})
+	return ok
 
 func claim(peer: int, seat: String) -> bool:
 	if not peers.has(peer) or not (seat in K.SEATS):
@@ -189,8 +213,8 @@ func _release_controls(st: String) -> void:
 			Intents.apply(world, "weapons", "fire", false)
 		"sensors":
 			Intents.apply(world, "sensors", "scan", false)
+			Intents.apply(world, "sensors", "tractor", false)
 		"shields":
-			Intents.apply(world, "shields", "tractor", false)
 			Intents.apply(world, "shields", "pet", false)
 			Intents.apply(world, "shields", "tin", false)
 		"engineer":
@@ -240,10 +264,15 @@ func lobby_dict() -> Dictionary:
 	for c in held.slice(maxi(0, held.size() - 4)):
 		names.append(str(Deck.describe(c).title))
 	return {"t": "lobby", "seats": seats, "peers": pl, "mission": mission_id, "missions": missions, "phase": phase, "admin": admin,
-		"room": {"name": room_name, "code": room_code}, "voice": voice, "problem": prob, "mode": mode,
+		"room": {"name": room_name, "code": room_code}, "voice": voice, "hard": career.hard, "robot_captain": robot_captain(), "problem": prob, "mode": mode,
 		"shift": {"open": shift_open(), "rent": Deck.rent(career), "shifts": career.shifts, "best": career.best_pay,
 			"cards": held.size(), "of": Deck.ORDER.size(), "latest": names, "full": career.full_deck, "needs": Deck.SHIFT_UNLOCKS_AT - 1},
 		"igor": lobby_line}
+
+func robot_captain() -> bool:
+	## practice: one human aboard and nobody in the Captain's chair, so IGOR captains
+	var o: int = int(seat_owner.get("captain", 0))
+	return (o == 0 or not peers.has(o) or peers[o].gone) and live_peers().size() == 1
 
 func shift_open() -> bool:
 	## solo and LAN crews earn the Shift with two training missions; online rooms have it from the start
@@ -273,10 +302,14 @@ func set_option(key: String, val: Variant) -> void:
 				mode = "career"
 		"bot_on":
 			if val is Dictionary:
-				bot_on[str(val.get("seat", ""))] = bool(val.get("on", true))
+				for st in K.role_seats(str(val.get("seat", ""))):
+					if st in K.STATIONS:
+						bot_on[st] = bool(val.get("on", true))
 				_sync_bots()
 		"voice":
 			voice = bool(val)
+		"hard":
+			career.hard = bool(val)
 		"unlock_all":
 			career.unlock_all()
 			for id in Missions.ORDER:
@@ -302,6 +335,8 @@ func _begin(id: String) -> void:
 	mission_id = id
 	world = World.new(seed_value)
 	mission = Missions.make(id)
+	if career.hard:
+		mission.features["hard"] = true
 	mission.setup(world)
 	_enter_briefing()
 
@@ -412,6 +447,9 @@ func _launch() -> void:
 	igor_cd = 3.0
 	igor_idle = 40.0
 	_event(0, {"t": "mission_start", "title": mission.title})
+	_cap_step = -1
+	_cap_said = {}
+	_cap_t = 2.0
 	_event(0, {"t": "step", "text": mission.cur().get("text", ""), "n": 0})
 
 func _briefing_tick(dt: float) -> void:
@@ -474,8 +512,28 @@ func _finish(ok: bool) -> void:
 	_event(0, {"t": "debrief", "ok": ok})
 	_send_career()
 
+func _log_job(ok: bool, pay: int) -> void:
+	## one line per finished job, so "par" and pay can be tuned from how real crews do, not robots
+	var humans: int = 0
+	for s in K.CREW:
+		var o: int = int(seat_owner.get(str(K.role_seats(s)[0]), 0))
+		if o != 0 and peers.has(o) and not peers[o].gone:
+			humans += 1
+	var line: Dictionary = {"when": Time.get_datetime_string_from_system(true), "task": str(mission.spec.get("task", "")),
+		"place": str(mission.spec.get("place", "")), "twists": mission.spec.get("twists", []), "danger": int(mission.spec.get("danger", 0)),
+		"ok": ok, "t": snappedf(mission.t, 0.1), "par": mission.par, "hull": snappedf(world.ship.hull, 0.1), "pay": pay,
+		"humans": humans, "hard": career.hard}
+	if humans == 0:
+		return     # robots only (tests, empty rooms): nothing to learn
+	var f: FileAccess = FileAccess.open("user://jobs.log", FileAccess.READ_WRITE if FileAccess.file_exists("user://jobs.log") else FileAccess.WRITE)
+	if f != null:
+		f.seek_end()
+		f.store_line(JSON.stringify(line))
+		f.close()
+
 func _finish_job(ok: bool, titles: Array) -> void:
 	var res: Dictionary = mission.result()
+	_log_job(ok, int(res.pay))
 	shift.earned = int(shift.earned) + int(res.pay)
 	shift.n = int(shift.n) + 1
 	(shift.history as Array).append({"title": mission.title, "pay": int(res.pay), "ok": ok})
@@ -496,8 +554,8 @@ func _finish_job(ok: bool, titles: Array) -> void:
 		debrief["made_rent"] = made
 		said = Igor.line("rent_made") if made else Igor.line("rent_missed", {"short": "£%d" % (int(shift.rent) - int(shift.earned))})
 		var review: Array = []
-		for s in K.SEATS:
-			var o: int = int(seat_owner.get(s, 0))
+		for s in K.CREW:
+			var o: int = int(seat_owner.get(str(K.role_seats(s)[0]), 0))
 			if o != 0 and peers.has(o) and not peers[o].gone:
 				review.append({"seat": s, "who": str(peers[o].name), "text": Igor.review(s)})
 		debrief["review"] = review.slice(0, 4)
@@ -555,14 +613,20 @@ func handle_msg(peer: int, kind: String, d: Dictionary) -> void:
 		return
 	match kind:
 		"hello":
-			add_peer(peer, str(d.get("name", "Crew %d" % peer)))
+			add_peer(peer, str(d.get("name", "Crew %d" % peer)), Hub.clean_token(d.get("token", "")))
 			if admin == 0:
 				admin = peer
 		"claim":
 			if d.get("seats") is Array:
-				claim_all(peer, d.seats)
+				# a list is only ever whole roles: expand each one, then all or nothing
+				var want: Array = []
+				for x in (d.seats as Array).slice(0, K.SEATS.size()):
+					for s2 in K.role_seats(str(x)):
+						if not (s2 in want):
+							want.append(s2)
+				claim_all(peer, want)
 			else:
-				claim(peer, str(d.get("seat", "")))
+				claim_role(peer, str(d.get("seat", "")))
 		"release_all":
 			for s in peers[peer].seats.duplicate():
 				release(peer, str(s))
@@ -574,7 +638,8 @@ func handle_msg(peer: int, kind: String, d: Dictionary) -> void:
 			if peer == admin and (who is int or who is float):
 				kick(int(who))
 		"release":
-			release(peer, str(d.get("seat", "")))
+			for s3 in K.role_seats(str(d.get("seat", ""))):
+				release(peer, str(s3))
 		"active":
 			set_active(peer, str(d.get("seat", "")))
 		"intent":
@@ -640,12 +705,20 @@ func shuffle_seats() -> void:
 			seat_owner[s] = pid2
 	_sync_bots()
 	_send_lobby()
-	_event(0, {"t": "toast", "text": "All change! Check your new seat.", "kind": "info"})
+	# tell each player where they've landed: their name stays, their seat (and its character) changes
+	for pid3 in humans:
+		var names: Array = []
+		for s2 in peers[pid3].seats:
+			names.append(K.seat_name(str(s2)).to_upper())
+		_event(pid3, {"t": "toast", "text": "All change! You're now %s" % " + ".join(PackedStringArray(names)), "kind": "info"})
 
 func _intent(peer: int, station: String, key: String, val: Variant) -> void:
 	if world == null or phase != "mission" or not (station in K.STATIONS):
 		return
-	if int(seat_owner.get(station, 0)) != peer or peers[peer].active != station:
+	if int(seat_owner.get(station, 0)) != peer:
+		return
+	# a player flipping between screens only works the one in front of them; a combined screen works both
+	if peers[peer].active != station and not K.combined(peers[peer].seats):
 		return
 	var inputs: Dictionary = tally.inputs
 	inputs[station] = int(inputs.get(station, 0)) + 1
@@ -691,15 +764,27 @@ func sim_step(dt: float) -> void:
 			pass
 		_:
 			return
+	world.hands = _hands()
 	for b in bots.values():
 		b.tick(world, dt)
 	world.step(dt)
 	_drain_events()
 	_commentary(dt)
+	if robot_captain():
+		_captain_tick(dt)
 	if mission.done:
 		_finish(true)
 	elif mission.failed:
 		_finish(false)
+
+func _hands() -> Dictionary:
+	## seat -> the human working it (robots are left out: they have as many hands as they like)
+	var out: Dictionary = {}
+	for s in seat_owner.keys():
+		var o: int = int(seat_owner[s])
+		if peers.has(o) and not peers[o].gone and not bots.has(s):
+			out[s] = o
+	return out
 
 func advance(seconds: float) -> void:
 	## for tests: run the host forward without real time passing
@@ -726,6 +811,88 @@ func _commentary(dt: float) -> void:
 		igor_idle = 45.0
 		_igor("idle", {}, 0)
 
+# ---------------------------------------------------------------- IGOR in the Captain's chair (practice)
+
+var _cap_t: float = 0.0
+var _cap_said: Dictionary = {}     # what IGOR last called, and when, so he doesn't repeat himself every breath
+var _cap_step: int = -1
+
+func _cap_call(key: String, text: String, again_s: float) -> bool:
+	## say it, unless the same call went out less than again_s seconds ago
+	var last: Array = _cap_said.get(key, ["", -99.0])
+	if str(last[0]) == text and world.t - float(last[1]) < again_s:
+		return false
+	_cap_said[key] = [text, world.t]
+	_event(0, {"t": "igor", "text": text, "prio": 2, "who": "igor", "speak": true})
+	igor_cd = 3.0
+	_cap_t = 3.2
+	return true
+
+func _captain_tick(dt: float) -> void:
+	## what a captain would shout, aimed only at the stations the one human is working
+	var human: Array = []
+	for pid in live_peers():
+		human.append_array(peers[pid].seats)
+	if human.is_empty():
+		return
+	if mission.step != _cap_step:
+		_cap_step = mission.step
+		var goal: String = str(mission.cur().get("text", ""))
+		if goal != "":
+			_cap_call("goal", "Captain IGOR: %s." % goal.trim_suffix("."), 1.0)
+			return
+	_cap_t -= dt
+	if _cap_t > 0.0:
+		return
+	var s: Ship = world.ship
+	# 1. the urgent warnings the bridge shows, for the human's own stations
+	for f in Snapshots.forecasts(world):
+		if int(f.get("level", 0)) >= 2 and str(f.get("who", "")) in human:
+			if _cap_call("warn", "%s! %s" % [K.role_name(K.role_of(str(f.who))), str(f.text)], 8.0):
+				return
+	# 2. steering, for whoever has the wheel
+	var g: Variant = mission.goal_pos()
+	if "helm" in human and g is Vector2:
+		var rel: float = K.wrap_pi(((g as Vector2) - s.pos).angle() - s.heading)
+		var d: float = ((g as Vector2) - s.pos).length()
+		var call: String = ""
+		if absf(rel) > deg_to_rad(25.0):
+			call = "Driver: turn %s. The goal is at %d o'clock." % ["RIGHT" if rel > 0.0 else "LEFT", K.clock(rel)]
+		elif d > 120.0:
+			call = "Driver: straight on. %d metres." % int(round(d / 50.0) * 50.0)
+		if call != "" and _cap_call("steer", call, 6.0):
+			return
+	# 3. speed, for whoever has the throttle
+	if "engines" in human and g is Vector2:
+		var d2: float = ((g as Vector2) - s.pos).length()
+		var want: String = "Stoker: full ahead." if d2 > 500.0 and s.throttle < 0.6 else ("Stoker: slow down, nearly there." if d2 < 160.0 and s.throttle > 0.4 else "")
+		if want != "" and _cap_call("speed", want, 10.0):
+			return
+	# 4. targets, for whoever has the gun
+	if "weapons" in human:
+		var best: Dictionary = {}
+		var bd: float = 600.0
+		for e in world.ents:
+			if e.alive and e.hostile and e.shootable and e.pos.distance_to(s.pos) < bd:
+				bd = e.pos.distance_to(s.pos)
+				best = e
+		if not best.is_empty():
+			var r2: float = K.wrap_pi((best.pos - s.pos).angle() - s.heading)
+			if _cap_call("target", "Stoker: %s at %d o'clock. Turret round and fire!" % [str(best.name), K.clock(r2)], 7.0):
+				return
+	# 5. the Tech: things to scan, things to mend
+	if "engineer" in human:
+		for id in Ship.SYSTEMS:
+			if s.broken(id):
+				if _cap_call("fix", "Tech: the %s is broken. Fix it!" % Ship.SYS_NAME[id].to_lower(), 12.0):
+					return
+	if "sensors" in human:
+		for e2 in world.ents:
+			if e2.alive and not e2.scanned and e2.ai != "thrown" and e2.pos.distance_to(s.pos) < world.radar_range:
+				if _cap_call("scan", "Tech: there's an unknown contact at %d o'clock. Scan it." % K.clock(K.wrap_pi((e2.pos - s.pos).angle() - s.heading)), 12.0):
+					return
+				break
+
 func _drain_events() -> void:
 	var evs: Array = world.events.duplicate()
 	world.events.clear()
@@ -736,11 +903,12 @@ func _drain_events() -> void:
 		_on_world_event(type, d)
 
 func _who(seat: String) -> String:
-	## the player in a seat by name, or the seat's own name when a robot has it
+	## the player in a seat by name, or the role's name when a robot has it ("Tech")
 	var o: int = int(seat_owner.get(seat, 0))
 	if o != 0 and peers.has(o) and not peers[o].gone:
 		return str(peers[o].name)
-	return K.seat_name(seat)
+	var r: String = K.role_of(seat)
+	return K.role_name(r) if K.ROLES.has(r) else K.seat_name(seat)
 
 func _names() -> Dictionary:
 	return {"eng": _who("engineer"), "shd": _who("shields"), "sns": _who("sensors"), "wpn": _who("weapons"), "hlm": _who("helm"),
@@ -830,7 +998,7 @@ func _on_world_event(type: String, d: Dictionary) -> void:
 		"radio_missed":
 			_igor("radio_missed", {"from": str(d.get("from", ""))}, 1)
 		"collected":
-			_igor("collected", {"name": str(d.get("name", "it")), "who": _who("shields")}, 1)
+			_igor("collected", {"name": str(d.get("name", "it")), "who": _who("sensors")}, 1)
 		"bonus":
 			_igor("bonus", {"amount": "£%d" % int(d.get("amount", 0))}, 1)
 			_event(0, {"t": "toast", "text": "+£%d bonus" % int(d.get("amount", 0)), "kind": "good"})
@@ -927,7 +1095,7 @@ func send_snapshots() -> void:
 func snapshot_for(peer: int) -> Dictionary:
 	var p: Dictionary = peers[peer]
 	var act: String = str(p.active)
-	var d: Dictionary = {"phase": phase, "active": act, "seats": p.seats, "you": peer}
+	var d: Dictionary = {"phase": phase, "active": act, "seats": p.seats, "you": peer, "name": str(p.name)}
 	if phase == "board" or world == null:
 		d["common"] = {}
 		d["view"] = {}
@@ -936,27 +1104,44 @@ func snapshot_for(peer: int) -> Dictionary:
 	d["common"] = Snapshots.common(world, act)
 	if mission.is_job():
 		d["common"]["shift"] = {"n": int(shift.get("n", 0)) + 1, "of": int(shift.get("of", 3)), "earned": int(shift.get("earned", 0)), "rent": int(shift.get("rent", 0))}
-	match act:
-		"captain":
-			d["view"] = Snapshots.captain(world)
-		"helm":
-			d["view"] = Snapshots.helm(world)
-		"engines":
-			d["view"] = Snapshots.engines(world)
-		"weapons":
-			d["view"] = Snapshots.weapons(world)
-		"sensors":
-			d["view"] = Snapshots.sensors(world)
-		"shields":
-			d["view"] = Snapshots.shields(world)
-		"engineer":
-			d["view"] = Snapshots.engineer(world)
-		_:
-			d["view"] = Snapshots.captain(world) if p.seats.is_empty() else {}
-	if d["view"] is Dictionary and not (d["view"] as Dictionary).is_empty():
-		d["view"] = Glitches.bend_view(world, act if act != "" else "captain", d["view"])
+	d["view"] = _view_of(act, p.seats.is_empty())
+	if K.combined(p.seats):
+		# both screens at once: each one's view, and each one's "your job now"
+		var views: Dictionary = {}
+		var hints: Dictionary = {}
+		var odd: Dictionary = {}
+		for st in p.seats:
+			views[st] = _view_of(str(st), false)
+			hints[st] = mission.hint(str(st))
+			odd[st] = Glitches.bothers(world, str(st))
+		d["views"] = views
+		d["hints"] = hints
+		d["odd"] = odd
 	d["phase_data"] = _phase_data(peer)
 	return d
+
+func _view_of(act: String, watching: bool) -> Dictionary:
+	var v: Dictionary = {}
+	match act:
+		"captain":
+			v = Snapshots.captain(world)
+		"helm":
+			v = Snapshots.helm(world)
+		"engines":
+			v = Snapshots.engines(world)
+		"weapons":
+			v = Snapshots.weapons(world)
+		"sensors":
+			v = Snapshots.sensors(world)
+		"shields":
+			v = Snapshots.shields(world)
+		"engineer":
+			v = Snapshots.engineer(world)
+		_:
+			v = Snapshots.captain(world) if watching else {}
+	if not v.is_empty():
+		v = Glitches.bend_view(world, act if act != "" else "captain", v)
+	return v
 
 func _phase_data(peer: int) -> Dictionary:
 	match phase:
@@ -975,17 +1160,19 @@ func _phase_data(peer: int) -> Dictionary:
 	return {}
 
 func roster(for_peer: int = 0) -> Array:
+	## the four seats for the briefing: who has each one (a role is held by whoever has its stations)
 	var out: Array = []
-	for s in K.SEATS:
-		var o: int = int(seat_owner.get(s, 0))
+	for r in K.CREW:
+		var first: String = str(K.role_seats(r)[0])
+		var o: int = int(seat_owner.get(first, 0))
 		var who: String = "Empty"
 		var kind: String = "empty"
 		if o != 0 and peers.has(o) and not peers[o].gone:
 			who = "You" if o == for_peer else str(peers[o].name)
 			kind = "human"
-		elif bots.has(s):
+		elif bots.has(first):
 			who = "Robot"
 			kind = "bot"
-		out.append({"seat": s, "who": who, "kind": kind, "ready": kind != "human" or bool(briefing.get("ready", {}).get(o, false)),
+		out.append({"seat": r, "who": who, "kind": kind, "ready": kind != "human" or bool(briefing.get("ready", {}).get(o, false)),
 			"mine": o == for_peer})
 	return out

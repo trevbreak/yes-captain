@@ -2,8 +2,8 @@ class_name Glitches
 extends RefCounted
 ## Glitches: the ship misbehaves. Each one bends a rule of ONE existing control (no new buttons), lives in a
 ## room of the ship, and stays until the Engineer fixes it. The fix comes from IGOR's manual and always needs
-## somebody ELSE to do something with their own control while the Engineer holds REPAIR, so a glitch makes
-## three people talk: the one it happened to, the Engineer, and whoever the manual names.
+## somebody ELSE to do something with their own control while the Tech holds REPAIR, so a glitch makes
+## three people talk: the one it happened to, the Tech, and whoever the manual names (always a third role).
 ##
 ## A glitch bends things in three places, all on the host:
 ##   bend_intent()  a control on its way in        (the wheel is on backwards)
@@ -77,18 +77,36 @@ static func _asks(w: World) -> Array:
 
 static func pick_ask(w: World, def: Dictionary) -> Dictionary:
 	var pool: Array = []
+	var spare: Array = []
+	var theirs: Array = K.role_seats(str(def.station))   # the role it happened to
+	var techs: Array = K.role_seats("engineer")           # the role holding REPAIR
 	for a in _asks(w):
-		if str(a.station) == str(def.station):
+		if str(a.station) in theirs:
 			continue   # never the person it happened to: they have enough problems
 		if str(a.key) == "fire" and not w.ship.ok("gun"):
 			continue
+		if str(a.station) in techs or same_hands(w, str(a.station), "engineer"):
+			spare.append(a)   # the Tech's own other station: they can't hold two things at once
+			continue
 		pool.append(a)
+	if pool.is_empty():
+		pool = spare
 	return pool[w.rng.randi() % pool.size()]
+
+static func same_hands(w: World, a: String, b: String) -> bool:
+	## true when one human is working both seats
+	return w.hands.has(a) and w.hands.has(b) and int(w.hands[a]) == int(w.hands[b])
+
+static func _needs_hand(a: Dictionary) -> bool:
+	## asks you have to keep holding (a dial left in place doesn't need a hand on it)
+	return str(a.key) in ["scan", "fire", "wheel"]
 
 static func ask_met(w: World, g: Dictionary) -> bool:
 	var a: Dictionary = g.get("ask", {})
 	if a.is_empty():
 		return true
+	if _needs_hand(a) and same_hands(w, str(a.get("station", "")), "engineer"):
+		return true   # seats changed hands since it was dealt: one person can't hold REPAIR and this too
 	var s: Ship = w.ship
 	var cur: float = 0.0
 	match str(a.key):

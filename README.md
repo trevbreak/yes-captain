@@ -51,16 +51,23 @@ The seats also need **each other**, not just the captain:
 | Seat | Persona | Hero control | Unlocks later |
 |---|---|---|---|
 | **Captain** | Captain Mo Pennywhistle (walrus) | None. Voice only. | |
-| **Helm** | Dex Wheelwright (duck) | Ship's wheel | Barrel roll |
+| **Helm** | Dex Wheelwright (duck) | Ship's wheel: hold LEFT / RIGHT to turn | Barrel roll |
 | **Engines** | Big Sal Throttleby (bulldog) | Brass throttle | Heat, boost |
 | **Weapons** | Rhoda "Boom" Blastworth (cat) | Turret dial + FIRE, through a periscope | Gun heat, torpedoes |
 | **Sensors** | Ozzy Squint (owl) | Radar: click a blip, hold SCAN | Comms dial, weak-spot scans |
 | **Shields** | Nana Fluffington (turtle) | Shield dial, marked like a clock | Tractor beam, Pudding care |
 | **Engineer** | Gus Spanner (raccoon) | Ship cutaway: click a room, hold REPAIR | Power bars, IGOR's manual |
 
-**Small crews take pairs.** One player holds two stations and flips between the two screens with **F**:
-**Pilot** (Helm + Engines), **Gunner** (Weapons + Shields), **Tech** (Sensors + Engineer). Four players crew the
-whole ship. Robots (IGOR's relatives) fill whatever is left. The Captain must be a human.
+**Four players.** The Captain plus three crew roles, each working two stations on one screen:
+**Driver** (Helm + Shields), **Stoker** (Engines + Weapons), **Tech** (Sensors + Engineer). Fewer than four of you?
+Robots (IGOR's relatives) take the empty roles. With two or more of you the Captain must be a human; on your own,
+**practise with robots** and IGOR captains, calling the turns, targets and repairs for your role.
+
+**Phones first.** Guests scan the QR code (or type the big four-letter code) on the Crew Room screen. Every desk takes
+two thumbs at once; on a phone held upright the menus go to one column and the game asks to be turned sideways.
+Tap anything with a "?" (or hold a button) to see what it does. A phone that drops out reconnects by itself and gets
+its seat back; a robot holds it meanwhile. Late arrivals can take a robot's role mid-shift. Keyboard players can
+rebind their keys from the menu (Esc, then Keys).
 
 ## Training: one new thing per mission
 

@@ -83,13 +83,22 @@ func _draw() -> void:
 				var dia: PackedVector2Array = PackedVector2Array([lp + Vector2(0, -dsz), lp + Vector2(dsz, 0), lp + Vector2(0, dsz), lp + Vector2(-dsz, 0), lp + Vector2(0, -dsz)])
 				draw_polyline(dia, UIK.ink(), 6.0, true)
 				draw_polyline(dia, UIK.c("yellow"), 3.0, true)
-	# bullets flying away from us / at us
+	# shots flying away from us (laser bolts streaking off into the distance) and at us (blobs)
+	var muzzle: Vector2 = c + Vector2(0, inner * 0.85)
 	for b in view.get("bullets", []):
 		var x3: float = float(b.rel) / cone
 		var near2: float = 1.0 - clampf(float(b.dist) / rng_max, 0.0, 1.0)
 		var bp: Vector2 = c + Vector2(x3 * inner * 0.92, (0.25 - near2 * 0.45) * inner + near2 * inner * 0.6)
-		if bp.distance_to(c) < inner:
-			var bc: Color = UIK.c("yellow") if b.from == "us" else UIK.c("red")
+		if bp.distance_to(c) >= inner:
+			continue
+		if b.from == "us" and str(b.get("kind", "")) != "torpedo":
+			var tail: Vector2 = bp.lerp(muzzle, 0.12 + near2 * 0.3)
+			var wd: float = 2.0 + near2 * 6.0
+			draw_line(tail, bp, Color(UIK.c("teal").lightened(0.3), 0.45), wd * 2.4, true)
+			draw_line(tail, bp, UIK.c("teal").lightened(0.45), wd, true)
+			draw_line(tail.lerp(bp, 0.35), bp, UIK.c("white"), maxf(1.5, wd * 0.4), true)
+		else:
+			var bc: Color = UIK.c("mustard") if b.from == "us" else UIK.c("red")
 			draw_circle(bp, 3.0 + near2 * 9.0, UIK.ink())
 			draw_circle(bp, 1.5 + near2 * 7.0, bc)
 	# crosshair
@@ -100,7 +109,9 @@ func _draw() -> void:
 	draw_line(c + Vector2(0, -inner), c + Vector2(0, -inner * 0.24), ch, 2.5, true)
 	draw_line(c + Vector2(0, inner * 0.24), c + Vector2(0, inner), ch, 2.5, true)
 	if firing and gun_ok and int(Time.get_ticks_msec() / 70) % 2 == 0:
-		draw_circle(c + Vector2(0, inner * 0.7), 26.0, Color(UIK.c("yellow"), 0.7))
+		# the emitter glows at the bottom of the glass while the laser's going
+		draw_circle(muzzle, 24.0, Color(UIK.c("teal").lightened(0.3), 0.45))
+		draw_circle(muzzle, 12.0, Color(UIK.c("white"), 0.8))
 	if not gun_ok:
 		var f2: Font = UIK.font("head")
 		draw_string_outline(f2, c + Vector2(-92, -inner * 0.3), "GUN BROKEN", HORIZONTAL_ALIGNMENT_LEFT, -1, 30, 8, UIK.ink())

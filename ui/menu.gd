@@ -14,6 +14,9 @@ var ship: TextureRect
 var pud: TextureRect
 var igor_bub: HBoxContainer
 var online_btn: Button
+var row: BoxContainer
+var title_lbl: Label
+var mid_area: Control
 var _t: float = 0.0
 var _igor_i: int = 0
 
@@ -34,19 +37,22 @@ func _ready() -> void:
 	var sb: Sunburst = Sunburst.new()
 	sb.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(sb)
-	var row: HBoxContainer = UIK.hbox(20)
+	row = BoxContainer.new()
+	row.add_theme_constant_override("separation", 20)
 	var m: MarginContainer = UIK.margin(row, 28)
 	m.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(m)
 	var left: VBoxContainer = UIK.vbox(4)
 	left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(left)
-	left.add_child(UIK.title("YES, CAPTAIN!", 92, UIK.c("red")))
+	title_lbl = UIK.title("YES, CAPTAIN!", 92, UIK.c("red"))
+	left.add_child(title_lbl)
 	left.add_child(UIK.head("A BRIDGE SIMULATOR FOR LOUD FRIENDS", 24, UIK.ink()))
 	var mid: Control = Control.new()
 	mid.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	mid.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	left.add_child(mid)
+	mid_area = mid
 	ship = UIK.pic("ship_ours", Vector2(190, 247))
 	ship.pivot_offset = Vector2(95, 123)
 	ship.rotation = deg_to_rad(80)
@@ -56,9 +62,9 @@ func _ready() -> void:
 	mid.add_child(pud)
 	var crew: HBoxContainer = UIK.hbox(-14)
 	left.add_child(crew)
-	for s in K.SEATS:
-		var p: TextureRect = UIK.portrait(s, 88)
-		p.tooltip_text = "%s: %s" % [K.seat_name(s), K.persona(s)]
+	for s in K.CREW:
+		var p: TextureRect = UIK.portrait(K.role_face(s), 88)
+		p.tooltip_text = "%s: %s" % [K.role_name(s), K.persona(K.role_face(s))]
 		p.mouse_filter = Control.MOUSE_FILTER_PASS
 		crew.add_child(p)
 	var right: VBoxContainer = UIK.vbox(12)
@@ -76,6 +82,7 @@ func _ready() -> void:
 	name_edit.placeholder_text = "What do they call you?"
 	name_edit.text_submitted.connect(func(_t2: String): _online())
 	b.add_child(name_edit)
+	Web.native_text(name_edit, "YOUR NAME")
 	online_btn = UIK.btn("Find a crew online" if Web.on() else "Join a server", "green", _online, "crew", 26)
 	online_btn.custom_minimum_size = Vector2(0, 62)
 	b.add_child(online_btn)
@@ -85,13 +92,15 @@ func _ready() -> void:
 		ip_edit.text = str(Web.setting("server", ""))
 		ip_edit.text_submitted.connect(func(_t3: String): _online())
 		b.add_child(ip_edit)
-	b.add_child(UIK.btn("Play with a robot crew", "blue", func(): solo_pressed.emit(_name()), "robot", 22))
+	b.add_child(UIK.btn("Practise with robots", "blue", func(): solo_pressed.emit(_name()), "robot", 22))
 	if not Web.on():
 		b.add_child(UIK.btn("Host on this network", "cream", func(): host_pressed.emit(_name()), "flag", 20))
 	msg = UIK.para("", 20, UIK.c("red"))
 	msg.custom_minimum_size = Vector2(0, 30)
 	b.add_child(msg)
-	var opts: HBoxContainer = UIK.hbox(8)
+	var opts: HFlowContainer = HFlowContainer.new()
+	opts.add_theme_constant_override("h_separation", 8)
+	opts.add_theme_constant_override("v_separation", 8)
 	right.add_child(opts)
 	var snd: Button = UIK.toggle("Sound", "green", func(on: bool): UIK.set_sound(on), "speaker", 18)
 	snd.button_pressed = true
@@ -103,14 +112,18 @@ func _ready() -> void:
 	vo.button_pressed = true
 	vo.tooltip_text = "IGOR reads his lines out loud"
 	opts.add_child(vo)
-	opts.add_child(UIK.btn("Full screen", "cream", func():
-		var full: bool = DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN
-		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED if full else DisplayServer.WINDOW_MODE_FULLSCREEN), "", 18))
+	opts.add_child(UIK.btn("Full screen", "cream", func(): Web.toggle_fullscreen(), "", 18))
 	if not Web.on():
 		opts.add_child(UIK.btn("Quit", "red", func(): quit_pressed.emit(), "x", 18))
 	igor_bub = UIK.speech(QUIPS[0], "igor", "IGOR", 76, 21)
 	(igor_bub.find_child("text", true, false) as Label).custom_minimum_size = Vector2(0, 58)
 	right.add_child(igor_bub)
+
+func set_portrait(p: bool) -> void:
+	## a phone held upright: everything in one column, the title a size that fits
+	row.vertical = p
+	title_lbl.add_theme_font_size_override("font_size", 66 if p else 92)
+	mid_area.custom_minimum_size = Vector2(0, 250) if p else Vector2.ZERO
 
 func _default_name() -> String:
 	var n: String = OS.get_environment("USER") if not Web.on() else ""

@@ -79,9 +79,9 @@ class DrivingLesson extends Mission:
 		features = Missions.features_upto(1)
 		place = "IGOR's practice yard"
 		par = 240.0
-		story = "Welcome, meat. IGOR is your ship's robot. Today IGOR teaches you to fly, so you do not embarrass IGOR in front of the other robots. The captain sees everything and touches nothing. Everyone else touches one thing and sees almost nothing. You must talk. Constantly. It is the only way."
-		new_thing = {"title": "Everyone gets ONE control", "who": ["helm", "engines", "weapons", "sensors", "shields", "engineer"],
-			"text": "Helm steers. Engines sets the speed. Weapons aims and fires. Sensors scans. Shields points the shield. The Engineer fixes things. The Captain tells everyone what to do."}
+		story = "Welcome, meat. IGOR is your ship's robot. Today IGOR teaches you to fly, so you do not embarrass IGOR in front of the other robots. The captain sees everything and touches nothing. Everyone else works two controls and sees almost nothing. You must talk. Constantly. It is the only way."
+		new_thing = {"title": "Three crew, two jobs each", "who": ["helm", "shields", "engines", "weapons", "sensors", "engineer"],
+			"text": "The Driver steers (Helm) and points the shield (Shields). The Stoker sets the speed (Engines) and aims and fires (Weapons). The Tech scans (Sensors) and fixes things (Engineer). The Captain tells everyone what to do."}
 
 	func build() -> void:
 		ring(Vector2(0, -460), "a")
@@ -139,8 +139,8 @@ class BinDay extends Mission:
 		place = "The Rubbish Belt"
 		par = 220.0
 		story = "Today is bin day. The Free Lanes pay us to collect a skip. A skip is a large bin. Humans fill it with things they do not want. IGOR understands this. IGOR has seen the crew. Fly to the skip, pull it aboard, and nobody asks what is inside."
-		new_thing = {"title": "The tractor beam", "who": ["shields"],
-			"text": "Shields can now hold TRACTOR to pull things in. It only reaches 150 metres, so the captain must get the ship close and slow."}
+		new_thing = {"title": "The tractor beam", "who": ["sensors"],
+			"text": "The Tech can now pull things in: click it on the radar, hold PULL. It only reaches 150 metres, so the captain must get the ship close and slow."}
 
 	func build() -> void:
 		w.spawn("skip", Vector2(320, -900), {"tag": "skip", "scanned": true, "name": "The skip"})
@@ -153,9 +153,9 @@ class BinDay extends Mission:
 		}, func(): return w.ship.pos.distance_to(pos_of("skip") if pos_of("skip") != null else w.ship.pos) < 200.0, Callable(),
 			func(): return pos_of("skip"))
 		add("Slow down and pull the skip aboard with the tractor beam", {
-			"shields": "Hold TRACTOR when your screen says the skip is in range.",
+			"sensors": "Hold PULL when your screen says the skip is in range.",
 			"engines": "Slow right down near the skip.",
-			"captain": "Get close, get slow, then tell Shields: 'TRACTOR!'",
+			"captain": "Get close, get slow, then tell the Tech: 'PULL!'",
 		}, func(): return count("collected") >= 1, Callable(), func(): return pos_of("skip"))
 		add("It's PUDDING! Scan the drones, then shoot them down", {
 			"sensors": "Scan the new blips so the captain knows what they are.",
@@ -379,25 +379,25 @@ class Brownout extends Mission:
 		place = "The Junkyard Run"
 		par = 220.0
 		story = "The reactor has been repaired by a human. It now makes less power than a toaster. It cannot run everything at full at once. IGOR suggests nobody does anything. Nobody listens to IGOR."
-		new_thing = {"title": "Power and overload", "who": ["engineer"],
-			"text": "The Engineer shares out 6 bars of power between Engines, Weapons and Shields. More bars means stronger. But full throttle, firing and the tractor all DRAW power: draw more than 6 and the reactor overloads. Overload means BLACKOUT. The captain sees the overload meter: tell people to ease off!"}
+		new_thing = {"title": "Power and overload", "who": ["engines"],
+			"text": "The Stoker shares out 6 bars of power between Engines, Weapons and Shields. More bars means stronger. But full throttle, firing and the tractor all DRAW power: draw more than 6 and the reactor overloads. Overload means BLACKOUT. The captain sees the overload meter: tell people to ease off!"}
 
 	func build() -> void:
 		ring(Vector2(0, -900), "r1")
 		for p in [Vector2(-260, -420), Vector2(240, -560)]:
 			w.spawn("pod", p, {"tag": "pod", "scanned": true})
 		ring(Vector2(-200, -1500), "out", "green")
-		add("Engineer: try moving the power bars around", {
-			"engineer": "Your power board: 6 bars to share between Engines, Weapons and Shields.",
+		add("Stoker: try moving the power bars around", {
+			"engines": "Your power board: 6 bars to share between Engines, Weapons and Shields.",
 			"captain": "Watch the reactor meter on your ship board.",
 		}, func(): return step_t > 10.0)
 		add("Pull in both cargo pods (the tractor uses power too)", {
-			"shields": "TRACTOR the pods when they're in range.",
-			"engineer": "Tractor + throttle might overload. Shuffle power when the captain says.",
+			"sensors": "PULL the pods when they're in range.",
+			"engines": "Tractor + throttle might overload. Shuffle power when the captain says.",
 		}, func(): return count("collected") >= 2, Callable(), func(): return pos_of("pod"))
 		add("Drones! Fight them off while flying through the ring", {
 			"weapons": "Fire! (Firing draws power.)",
-			"engineer": "Fighting needs Weapons power. Flying needs Engines. Choose!",
+			"engines": "Fighting needs Weapons power. Flying needs Engines. Choose!",
 		}, func(): return count("killed_drone") >= 3 and passed("r1"), func():
 			for k in 3:
 				w.spawn("drone", ahead(450, -1.0 + k * 1.0), {"ai": "drone"}), func(): return pos_of("r1"))

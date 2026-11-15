@@ -25,6 +25,11 @@ static func apply(w: World, station: String, key: String, val: Variant, raw: boo
 					s.throttle = clampf(float(val), 0.0, 1.0)
 				"boost":
 					s.boost = bool(val) and w.feat("boost")
+				"power":
+					if w.feat("power") and val is Dictionary:
+						var g: String = str(val.get("group", ""))
+						if s.power.has(g):
+							s.power[g] = clampi(int(val.get("bars", 2)), 0, 3)
 		"weapons":
 			match key:
 				"aim":
@@ -50,6 +55,8 @@ static func apply(w: World, station: String, key: String, val: Variant, raw: boo
 						w.scan_prog = 0.0
 				"scan":
 					w.scanning = bool(val)
+				"tractor":
+					s.tractor_on = bool(val) and w.feat("tractor")
 				"freq":
 					if w.feat("comms"):
 						w.comms_freq = clampf(float(val), 0.0, 1.0)
@@ -58,8 +65,6 @@ static func apply(w: World, station: String, key: String, val: Variant, raw: boo
 			match key:
 				"dir":
 					s.shield_dir = K.wrap_pi(float(val))
-				"tractor":
-					s.tractor_on = bool(val) and w.feat("tractor")
 				"pet":
 					s.petting = bool(val) and w.feat("pudding") and not s.pud_out
 				"snack":
@@ -78,11 +83,6 @@ static func apply(w: World, station: String, key: String, val: Variant, raw: boo
 						s.repair_prog = 0.0
 				"repair":
 					s.repairing = bool(val)
-				"power":
-					if w.feat("power") and val is Dictionary:
-						var g: String = str(val.get("group", ""))
-						if s.power.has(g):
-							s.power[g] = clampi(int(val.get("bars", 2)), 0, 3)
 
 const NUMERIC: Array = ["wheel", "throttle", "aim", "freq", "dir"]
 

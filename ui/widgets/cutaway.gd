@@ -73,11 +73,14 @@ func _room_at(p: Vector2) -> String:
 func _gui_input(e: InputEvent) -> void:
 	if not clickable:
 		return
+	if Pointer.swallow(e):
+		accept_event()
+		return
 	if e is InputEventMouseMotion:
 		var h: String = _room_at(e.position)
 		if h != _hover:
 			_hover = h
-	elif e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT:
+	elif Pointer.down(e) != Pointer.NONE:
 		var id: String = _room_at(e.position)
 		if id != "":
 			room_clicked.emit(id)

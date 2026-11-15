@@ -38,14 +38,21 @@ func _init() -> void:
 	fresh.career = Progress.new()
 	fresh.career.full_deck = true
 	_check(fails, Deck.cards(fresh.career).size() == Deck.ORDER.size(), "an online crew holds the whole deck from the start")
-	_check(fails, Jobs.open_tasks(Deck.features_for(fresh.career)).size() == Jobs.TASKS.size(), "a new crew can be dealt every kind of job")
+	# normal mode holds back the radio and torpedo jobs; hard mode deals the lot
+	var normal_tasks: Array = Jobs.open_tasks(Deck.features_for(fresh.career))
+	_check(fails, normal_tasks.size() == Jobs.TASKS.size() - 2 and not ("inspection" in normal_tasks) and not ("bigone" in normal_tasks),
+		"normal mode deals every job but the radio and torpedo ones (%d)" % normal_tasks.size())
+	_check(fails, not Deck.features_for(fresh.career).has("comms") and not Deck.features_for(fresh.career).has("torpedo"), "normal mode has no comms dial or torpedoes")
+	fresh.career.hard = true
+	_check(fails, Jobs.open_tasks(Deck.features_for(fresh.career)).size() == Jobs.TASKS.size(), "hard mode can deal every kind of job")
 	var dealt_kinds: Dictionary = {}
 	var orng: RandomNumberGenerator = RandomNumberGenerator.new()
 	orng.seed = 5
 	for i in 30:
 		for o in Jobs.offers(orng, fresh.career):
 			dealt_kinds[o.task] = true
-	_check(fails, dealt_kinds.size() == Jobs.TASKS.size(), "the job board deals all %d kinds of job to a new crew (saw %d)" % [Jobs.TASKS.size(), dealt_kinds.size()])
+	_check(fails, dealt_kinds.size() == Jobs.TASKS.size(), "the job board deals all %d kinds of job to a hard-mode crew (saw %d)" % [Jobs.TASKS.size(), dealt_kinds.size()])
+	fresh.career.hard = false
 	fresh.shift_always = true
 	fresh.mode = "shift"
 	fresh.start_game(91)

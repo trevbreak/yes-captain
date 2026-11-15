@@ -2,14 +2,13 @@ class_name CaptainUI
 extends Control
 ## The Captain's bridge, made to be put on a TV. The chart fills a big viewscreen: where everything is, the mission
 ## as numbered flags along the route, trouble pinned where it is. Under it sits a row of consoles, one per crew
-## member, each with the one instrument that shows what that job knows and the chart doesn't (the wheel, the
-## throttle and heat, the torpedo, the scan, the shield's power, the repair), and the ship's hull in the middle.
+## role (Driver, Stoker, Tech), each with the two instruments that show what that role knows and the chart
+## doesn't (the wheel, the shield; the throttle and heat, the gun; the scan, the repair), and the ship's hull.
 ## The captain touches NOTHING: they look, and they shout.
 
 signal menu_pressed
 
-const SEATS_LEFT: Array = ["helm", "engines", "weapons"]
-const SEATS_RIGHT: Array = ["sensors", "shields", "engineer"]
+const CONSOLES: Array = ["driver", "stoker", "tech", "ship"]
 
 var chart: Chart
 var screen: Control
@@ -21,7 +20,7 @@ var igor_pic: Face
 var igor_text: Label
 var toast_chip: PanelContainer
 var seat_row: HBoxContainer
-var consoles: Dictionary = {}     # seat (or "ship") -> {panel, face, inst, status}
+var consoles: Dictionary = {}     # role (or "ship") -> {panel, face, insts: {station: Instrument}, status}
 var _flip: bool = false
 var _igor_tw: Tween
 var _toast_tw: Tween
@@ -42,6 +41,11 @@ func _ready() -> void:
 	_build_screen()
 	_build_plaque()
 	_build_consoles()
+
+func _get_minimum_size() -> Vector2:
+	## the consoles along the bottom set how narrow the bridge can go (the FitBox it sits in shrinks it past that)
+	var row: Control = get_node_or_null("consoles")
+	return Vector2((row.get_combined_minimum_size().x + 8.0) if row != null else 0.0, 460.0)
 
 # ---------------------------------------------------------------- building
 
@@ -116,10 +120,10 @@ func _build_screen() -> void:
 	bubble.add_child(igor_text)
 	# the latest news, low in the middle of the screen
 	toast_chip = UIK.chip("", "cream", "", 20)
-	toast_chip.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	# news goes along the top edge, under the title plaque: never over the ship the captain is watching
+	toast_chip.set_anchors_preset(Control.PRESET_CENTER_TOP)
 	toast_chip.grow_horizontal = Control.GROW_DIRECTION_BOTH
-	toast_chip.grow_vertical = Control.GROW_DIRECTION_BEGIN
-	toast_chip.offset_bottom = -62
+	toast_chip.offset_top = 72
 	toast_chip.modulate.a = 0.0
 	screen.add_child(toast_chip)
 	# when this player holds more than one seat: little buttons to hop between them
@@ -160,6 +164,7 @@ func _build_plaque() -> void:
 	h.add_child(plaque_pay)
 	h.add_child(Voice.Bar.new())
 	var mb: Button = UIK.btn("", "cream", func(): menu_pressed.emit(), "menu", 18)
+	mb.set_meta("no_touch_min", true)   # the bridge is on a TV: a plaque-sized button
 	mb.tooltip_text = "Menu (Esc)"
 	mb.custom_minimum_size = Vector2(40, 36)
 	mb.size_flags_vertical = Control.SIZE_SHRINK_CENTER
@@ -177,11 +182,8 @@ func _build_consoles() -> void:
 	row.offset_right = -4
 	row.offset_bottom = 0
 	add_child(row)
-	for st in SEATS_LEFT:
-		row.add_child(_console(st))
-	row.add_child(_console("ship"))
-	for st2 in SEATS_RIGHT:
-		row.add_child(_console(st2))
+	for c in CONSOLES:
+		row.add_child(_console(str(c)))
 	resized.connect(_relayout)
 	_relayout.call_deferred()
 
@@ -202,31 +204,46 @@ func _console(st: String) -> PanelContainer:
 	sb.content_margin_bottom = 4
 	p.add_theme_stylebox_override("panel", sb)
 	p.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	if st == "ship":
-		p.size_flags_stretch_ratio = 1.25
+	p.size_flags_stretch_ratio = 1.1 if st == "ship" else 2.0
 	p.clip_contents = true
 	var v: VBoxContainer = UIK.vbox(0)
 	p.add_child(v)
 	var head: HBoxContainer = UIK.hbox(4)
 	v.add_child(head)
-	var face: Face = UIK.portrait("captain" if st == "ship" else st, 32)
+	var face: Face = UIK.portrait("captain" if st == "ship" else K.role_face(st), 32)
 	head.add_child(face)
-	var nm: Label = UIK.head("THE SHIP" if st == "ship" else K.seat_name(st).to_upper(), 15,
-		K.pal("red") if st == "ship" else K.seat_color(st).darkened(0.25))
+	var nm: Label = UIK.head("THE SHIP" if st == "ship" else K.role_name(st).to_upper(), 15,
+		K.pal("red") if st == "ship" else UIK.c(K.role_color(st)).darkened(0.25))
 	nm.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	head.add_child(nm)
-	var inst: Instrument = Instrument.new()
-	inst.kind = st
-	inst.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	inst.custom_minimum_size = Vector2(110, 56)
-	v.add_child(inst)
+	# who's at it: the captain shouts names, not job titles
+	var who: Label = UIK.label("", 15, K.pal("ink_soft"))
+	who.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	who.clip_text = true
+	who.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	who.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	head.add_child(who)
+	# a role's two stations, one instrument each, side by side
+	var ir: HBoxContainer = UIK.hbox(4)
+	ir.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	v.add_child(ir)
+	var insts: Dictionary = {}
+	for kind in (["ship"] if st == "ship" else K.role_seats(st)):
+		var inst: Instrument = Instrument.new()
+		inst.kind = str(kind)
+		inst.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		inst.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		inst.custom_minimum_size = Vector2(110, 56)
+		inst.tooltip_text = "" if st == "ship" else K.seat_name(str(kind))
+		ir.add_child(inst)
+		insts[kind] = inst
 	var status: Label = UIK.label("", 15)
 	status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	status.clip_text = true
 	status.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	status.custom_minimum_size = Vector2(60, 0)
 	v.add_child(status)
-	consoles[st] = {"panel": p, "face": face, "inst": inst, "status": status}
+	consoles[st] = {"panel": p, "face": face, "insts": insts, "status": status, "who": who}
 	return p
 
 # ---------------------------------------------------------------- live
@@ -269,17 +286,31 @@ func apply(v: Dictionary, com: Dictionary) -> void:
 	data["systems"] = bd.get("systems", {})
 	for st in consoles.keys():
 		var c: Dictionary = consoles[st]
-		var ins: Instrument = c.inst
-		ins.data = data
-		ins.odd = st in inst.get("odd", [])
-		ins.queue_redraw()
-		var cl: Dictionary = crew.get(st, {})
-		var al: int = int(cl.get("alert", 0))
+		var odd: bool = false
+		for kind in (c.insts as Dictionary).keys():
+			var ins: Instrument = c.insts[kind]
+			ins.data = data
+			ins.odd = kind in inst.get("odd", [])
+			odd = odd or ins.odd
+			ins.queue_redraw()
+		# a role says whichever of its two stations is in the most trouble (the first one when both are calm)
+		var al: int = 0
+		var line: String = ""
 		if st == "ship":
 			al = 2 if float(data.hull) < 0.35 else (1 if float(data.hull) < 0.6 else 0)
-		(c.face as Face).set_mood("panic" if al >= 2 else ("busy" if al == 1 or ins.odd else ""))
+			line = _status("ship", {}, data)
+		else:
+			for kind2 in K.role_seats(st):
+				var cl: Dictionary = crew.get(kind2, {})
+				if line == "" or int(cl.get("alert", 0)) > al:
+					al = int(cl.get("alert", 0))
+					line = _status(str(kind2), cl, data)
+		(c.face as Face).set_mood("panic" if al >= 2 else ("busy" if al == 1 or odd else ""))
+		if st != "ship":
+			var seat: Dictionary = Net.last_lobby.get("seats", {}).get(str(K.role_seats(st)[0]), {})
+			(c.who as Label).text = ("· " + str(seat.owner_name)) if str(seat.get("owner_name", "")) != "" else "· robot"
 		var stl: Label = c.status
-		stl.text = _status(st, cl, data)
+		stl.text = line
 		stl.tooltip_text = stl.text
 		stl.add_theme_color_override("font_color", UIK.c("red") if al >= 2 else (Color("#9a6a10") if al == 1 else UIK.ink()))
 		var psb: StyleBoxFlat = (c.panel as PanelContainer).get_theme_stylebox("panel")
@@ -459,6 +490,11 @@ class Instrument extends Control:
 		draw_circle(Vector2(48, hy - 4), 7.0, UIK.ink())
 		draw_circle(Vector2(48, hy - 4), 5.0, UIK.c("red") if bool(data.get("boost", false)) else K.pal("blue"))
 		_text(Vector2(64, 76), "%d m/s" % int(data.get("speed", 0)), 14, UIK.ink())
+		if _f("power"):
+			# the reactor's load: the Stoker shares the power out, so it's the Stoker's to watch
+			var load: float = float(data.get("draw", 0.0)) / maxf(1.0, float(data.get("cap", 6.0)))
+			_bar(Rect2(68, 8, 10, 42), clampf(load, 0.0, 1.0), UIK.c("red") if load > 1.0 else K.pal("mustard"), true)
+			_text(Vector2(73, 60), "load", 10, UIK.ink(), false)
 		if _f("heat"):
 			var h: float = float(data.get("engine_heat", 0.0)) / 100.0
 			var col: Color = UIK.c("red") if h > 0.8 else UIK.c("orange")
@@ -553,7 +589,7 @@ class Instrument extends Control:
 			_stamp(Vector2(56, 40), "BROKEN", UIK.c("red"))
 
 	func _engineer() -> void:
-		## the repair under way, as a ring filling round a spanner; and the reactor's load
+		## the repair under way, as a ring filling round a spanner
 		var c: Vector2 = Vector2(46, 38)
 		draw_arc(c, 28.0, 0.0, TAU, 40, K.pal("paper2"), 8.0, true)
 		var fixing: bool = str(data.get("fixing", "")) != ""
@@ -566,10 +602,7 @@ class Instrument extends Control:
 		draw_line(c - d * 14.0, c + d * 12.0, K.pal("steel"), 5.0, true)
 		draw_arc(c + d * 15.0, 7.0, -0.8 + 0.9, -0.8 + TAU - 0.9, 16, UIK.ink(), 6.0, true)
 		draw_arc(c + d * 15.0, 7.0, -0.8 + 0.9, -0.8 + TAU - 0.9, 16, K.pal("steel"), 3.0, true)
-		if _f("power"):
-			var load: float = float(data.get("draw", 0.0)) / maxf(1.0, float(data.get("cap", 6.0)))
-			_bar(Rect2(92, 8, 14, 56), clampf(load, 0.0, 1.0), UIK.c("red") if load > 1.0 else K.pal("mustard"), true)
-			_text(Vector2(99, 76), "load", 12, UIK.ink(), false)
+
 		if bool(data.get("blackout", false)):
 			_stamp(Vector2(60, 40), "BLACKOUT", UIK.ink())
 

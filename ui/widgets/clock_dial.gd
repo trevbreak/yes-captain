@@ -16,6 +16,7 @@ var hits: Array = []          # [{rel, blocked, age}]
 var stuck: Array = []         # grabber relative angles
 var accent: Color = Color.WHITE
 var _drag: bool = false
+var _finger: int = Pointer.NONE
 var _bezel: Texture2D
 var _ship: Texture2D
 
@@ -44,13 +45,21 @@ func _r() -> float:
 func _gui_input(e: InputEvent) -> void:
 	if disabled:
 		return
-	if e is InputEventMouseButton and e.button_index == MOUSE_BUTTON_LEFT:
-		_drag = e.pressed
-		if e.pressed:
-			_point(e.position)
+	if Pointer.swallow(e):
 		accept_event()
-	elif e is InputEventMouseMotion and _drag:
+		return
+	var d: int = Pointer.down(e)
+	if d != Pointer.NONE and _finger == Pointer.NONE:
+		_finger = d
+		_drag = true
 		_point(e.position)
+		accept_event()
+	elif Pointer.moved(e) != Pointer.NONE and Pointer.moved(e) == _finger:
+		_point(e.position)
+		accept_event()
+	elif Pointer.up(e) != Pointer.NONE and Pointer.up(e) == _finger:
+		_finger = Pointer.NONE
+		_drag = false
 		accept_event()
 
 func _point(p: Vector2) -> void:

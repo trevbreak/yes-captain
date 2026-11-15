@@ -22,6 +22,11 @@ func _init() -> void:
 	for task in Jobs.TASKS.keys():
 		if only != "" and task != only:
 			continue
+		# the radio and torpedo jobs only come up in hard mode; everything else flies at the normal pace
+		career.hard = false
+		for n in Jobs.TASKS[task].needs:
+			if n in Deck.HARD_ONLY:
+				career.hard = true
 		for sd in seeds:
 			var tw: Array = []
 			for k in sd % 3:

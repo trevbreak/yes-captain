@@ -11,7 +11,7 @@ const SYS_NAME: Dictionary = {
 ## which station suffers when a system breaks
 const SYS_OWNER: Dictionary = {
 	"bridge": "helm", "engine_p": "engines", "engine_s": "engines", "gun": "weapons", "shield": "shields",
-	"sensors": "sensors", "tractor": "shields", "reactor": "engineer", "pen": "shields",
+	"sensors": "sensors", "tractor": "sensors", "reactor": "engines", "pen": "shields",
 }
 ## where each system sits (ship-relative angle, 0 = nose), so hits from a side damage what's on that side
 const SYS_SIDE: Dictionary = {

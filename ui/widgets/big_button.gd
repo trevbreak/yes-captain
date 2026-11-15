@@ -13,9 +13,11 @@ var down: bool = false
 var disabled: bool = false
 var progress: float = -1.0     # optional ring of progress around the button (0..1)
 var key_hint: String = ""
+var arrow: int = 0             # -1 / 1: an arrow on the cap pointing left / right (the helm's turn buttons)
 var _up: Texture2D
 var _dn: Texture2D
 var _mouse: bool = false
+var _finger: int = Pointer.NONE   # the finger (or mouse) holding it down
 
 func _init(text: String = "FIRE", col: String = "red", is_hold: bool = true, px: int = 150) -> void:
 	label = text
@@ -26,19 +28,21 @@ func _init(text: String = "FIRE", col: String = "red", is_hold: bool = true, px:
 	mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 
 func _ready() -> void:
+	add_to_group("input_hints")
 	_up = Art.tex("bigbtn_" + colour, 1.2)
 	_dn = Art.tex("bigbtn_%s_down" % colour, 1.2)
 	_fit_label()
 
 func _label_text() -> String:
-	return label + ("  [%s]" % key_hint if key_hint != "" else "")
+	return label + ("  [%s]" % key_hint if key_hint != "" and UIK.keys_shown() else "")
 
 func _font_size() -> int:
 	return 24 if label.length() < 9 else 19
 
 func _fit_label() -> void:
 	## the caption is drawn under the button: make sure the control is wide enough to hold it
-	var w: float = UIK.font("head").get_string_size(_label_text(), HORIZONTAL_ALIGNMENT_LEFT, -1, _font_size()).x + 6.0
+	var full: String = label + ("  [%s]" % key_hint if key_hint != "" else "")
+	var w: float = UIK.font("head").get_string_size(full, HORIZONTAL_ALIGNMENT_LEFT, -1, _font_size()).x + 6.0
 	if custom_minimum_size.x < w:
 		custom_minimum_size.x = w
 
@@ -67,6 +71,7 @@ func _set_down(v: bool) -> void:
 	queue_redraw()
 	if v:
 		UIK.sfx("clunk")
+		Web.buzz(12)
 	if hold:
 		held.emit(v)
 	elif v:
@@ -75,9 +80,21 @@ func _set_down(v: bool) -> void:
 func _gui_input(e: InputEvent) -> void:
 	if disabled:
 		return
-	if e is InputEventMouseButton and e.button_index == MOUSE_BUTTON_LEFT:
-		_mouse = e.pressed
-		_set_down(e.pressed)
+	if Pointer.swallow(e):
+		accept_event()
+		return
+	var d: int = Pointer.down(e)
+	if d != Pointer.NONE and _finger == Pointer.NONE:
+		_finger = d
+		_mouse = true
+		_set_down(true)
+		accept_event()
+		return
+	var u: int = Pointer.up(e)
+	if u != Pointer.NONE and u == _finger:
+		_finger = Pointer.NONE
+		_mouse = false
+		_set_down(false)
 		accept_event()
 
 func _notification(what: int) -> void:
@@ -99,6 +116,14 @@ func _draw() -> void:
 		draw_arc(c, s * 0.47, -PI / 2.0, -PI / 2.0 + TAU, 48, Color(UIK.ink(), 0.25), 9.0, true)
 		if progress > 0.0:
 			draw_arc(c, s * 0.47, -PI / 2.0, -PI / 2.0 + TAU * progress, 48, UIK.c("green"), 9.0, true)
+	if arrow != 0:
+		var ac: Vector2 = r.get_center() + Vector2(0, 4 if down else -2)
+		var a: float = s * 0.2
+		var pts: PackedVector2Array = PackedVector2Array([ac + Vector2(a * arrow, 0), ac + Vector2(-a * 0.75 * arrow, -a), ac + Vector2(-a * 0.75 * arrow, a)])
+		var col: Color = Color(UIK.c("cream"), 0.5 if disabled else 1.0)
+		draw_colored_polygon(pts, col)
+		pts.append(pts[0])
+		draw_polyline(pts, UIK.ink(), 4.0, true)
 	var f: Font = UIK.font("head")
 	var fs: int = _font_size()
 	var txt: String = _label_text()

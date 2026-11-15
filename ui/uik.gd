@@ -11,6 +11,30 @@ const HEAD: int = 26
 
 static var _fonts: Dictionary = {}
 static var _theme: Theme = null
+## what the player last used: "touch", "mouse" or "key". Key hints ("[SPACE]") only show for "key".
+static var last_input: String = ""
+## a touch screen: every button gets at least TOUCH_MIN tall (about 44 px on a phone, Apple's guideline)
+static var touch_ui: bool = false
+const TOUCH_MIN: float = 82.0
+
+static func note_input(e: InputEvent) -> bool:
+	## call with every input event; true when the kind of input just changed (time to redraw the hints)
+	var kind: String = ""
+	if e is InputEventScreenTouch or e is InputEventScreenDrag:
+		kind = "touch"
+	elif e is InputEventKey and (e as InputEventKey).pressed:
+		kind = "key"
+	elif (e is InputEventMouseButton or e is InputEventMouseMotion) and e.device != InputEvent.DEVICE_ID_EMULATION:
+		kind = "mouse"
+		if e is InputEventMouseMotion and last_input == "key":
+			return false   # a nudged mouse doesn't hide the keys you're using
+	if kind == "" or kind == last_input:
+		return false
+	last_input = kind
+	return true
+
+static func keys_shown() -> bool:
+	return last_input == "key"
 
 # ---------------------------------------------------------------- colour + fonts
 
@@ -227,6 +251,13 @@ static func btn(text: String, col: String = "cream", cb: Callable = Callable(), 
 	if cb.is_valid():
 		b.pressed.connect(cb)
 	b.button_down.connect(func(): UIK.sfx("click"))
+	if touch_ui:
+		# after the caller has set its own size: never shorter than a fingertip
+		b.ready.connect(func():
+			if b.has_meta("no_touch_min"):
+				return
+			var w: float = TOUCH_MIN if b.text == "" else TOUCH_MIN * 0.75     # an icon-only button is square
+			b.custom_minimum_size = Vector2(maxf(b.custom_minimum_size.x, w), maxf(b.custom_minimum_size.y, TOUCH_MIN)), CONNECT_ONE_SHOT)
 	return b
 
 static func toggle(text: String, col: String, cb: Callable, icon_name: String = "", size: int = 22) -> Button:
@@ -406,3 +437,36 @@ static func bg(parent: Control) -> Paper:
 	parent.add_child(p)
 	parent.move_child(p, 0)
 	return p
+
+static func confirm(host: Control, title: String, text: String, yes: String, on_yes: Callable) -> Control:
+	## "are you sure?" over the whole screen: the risky choice in red, staying put in green (and the default)
+	var o: Control = Control.new()
+	o.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	o.set_meta("overlay", true)
+	o.z_index = 60
+	var dim: ColorRect = ColorRect.new()
+	dim.color = Color(0.1, 0.07, 0.05, 0.55)
+	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	o.add_child(dim)
+	var cc: CenterContainer = CenterContainer.new()
+	cc.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	o.add_child(cc)
+	var w: Array = window(title, "red", "back")
+	(w[0] as Control).custom_minimum_size = Vector2(460, 0)
+	cc.add_child(w[0])
+	var b: VBoxContainer = w[1]
+	b.add_child(para(text, 21))
+	var r: HBoxContainer = hbox(10)
+	b.add_child(r)
+	var stay: Button = btn("Stay", "green", func(): o.queue_free(), "check", 22)
+	stay.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	stay.custom_minimum_size = Vector2(0, 56)
+	r.add_child(stay)
+	var go: Button = btn(yes, "red", func():
+		o.queue_free()
+		on_yes.call(), "back", 22)
+	go.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	go.custom_minimum_size = Vector2(0, 56)
+	r.add_child(go)
+	host.add_child(o)
+	return o

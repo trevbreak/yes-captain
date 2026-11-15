@@ -1,22 +1,16 @@
 class_name EngineerUI
 extends Station
 ## Engineer: the ship's cutaway with every bit of damage on it. Click a room, hold REPAIR. Fires first!
-## Later: sharing out the reactor's power, and keeping it from overloading (mission 8).
+## (The reactor's power bars are the Stoker's, on the Engines screen.)
 
 var cut: Cutaway
 var rep_btn: BigButton
 var sel_lbl: Label
-var pow_box: VBoxContainer
-var pips: Dictionary = {}
-var draw_bar: Gauges.Bar
-var over: Gauges.Bar
 var man_name: Label
 var man_who: Face
 var man_state: PanelContainer
-var _bars: Dictionary = {"engines": 2, "weapons": 2, "shields": 2}
 var _sel: String = ""
 
-const GROUPS: Array = [["engines", "Engines", "orange"], ["weapons", "Weapons", "red"], ["shields", "Shields", "purple"]]
 
 func _init() -> void:
 	super("engineer")
@@ -56,43 +50,10 @@ func build() -> void:
 	man_state.visible = false
 	sv.add_child(man_state)
 	rep_btn = BigButton.new("REPAIR", "green", true, 110)
-	rep_btn.key_hint = "Space"
+	keyed(rep_btn, KEY_R)
 	rep_btn.held.connect(func(on: bool): send("repair", on))
 	row.add_child(rep_btn)
-	pow_box = side_window("POWER", "mustard", "bolt")
-	for g in GROUPS:
-		var r: HBoxContainer = UIK.hbox(6)
-		pow_box.add_child(r)
-		var l: Label = UIK.head(str(g[1]), 19)
-		l.custom_minimum_size = Vector2(96, 0)
-		r.add_child(l)
-		var btns: Array = []
-		for i in 3:
-			var b: Button = UIK.toggle("", str(g[2]), func(_on: bool): _set_bars(str(g[0]), i + 1), "", 16)
-			b.custom_minimum_size = Vector2(44, 38)
-			r.add_child(b)
-			btns.append(b)
-		var z: Button = UIK.btn("0", "cream", func(): _set_bars(str(g[0]), 0), "", 16)
-		z.custom_minimum_size = Vector2(36, 40)
-		r.add_child(z)
-		pips[g[0]] = btns
-	draw_bar = Gauges.Bar.new("mustard", 28)
-	draw_bar.marker = 6.0 / 9.0
-	pow_box.add_child(draw_bar)
-	over = Gauges.Bar.new("red", 28)
-	pow_box.add_child(over)
-	keys_lbl.text = "Click a room, then hold SPACE (or REPAIR).   Fires spread: put them out first!"
-
-func _set_bars(g: String, n: int) -> void:
-	_bars[g] = n
-	send("power", {"group": g, "bars": n})
-	_show_pips()
-
-func _show_pips() -> void:
-	for g in pips.keys():
-		var btns: Array = pips[g]
-		for i in btns.size():
-			(btns[i] as Button).set_pressed_no_signal(i < int(_bars.get(g, 0)))
+	keys_lbl.text = "Click a room, then hold R (or REPAIR).   Fires spread: put them out first!"
 
 func refresh(v: Dictionary, com: Dictionary) -> void:
 	cut.systems = v.get("systems", {})
@@ -142,21 +103,8 @@ func refresh(v: Dictionary, com: Dictionary) -> void:
 		if str(st.get("state", "ok")) == "broken" and tip != "":
 			sel_lbl.text += "\n" + ("Nobody's using it: fixing at double speed!" if bool(v.get("resting", false)) else tip)
 	rep_btn.set_progress(float(v.get("prog", 0.0)) if bool(v.get("repairing", false)) else -1.0)
-	pow_box.get_parent().get_parent().visible = feat("power")
-	var pw: Dictionary = v.get("power", {})
-	if not pw.is_empty():
-		var bars: Dictionary = pw.get("bars", {})
-		for g in bars.keys():
-			_bars[g] = int(bars[g])
-		_show_pips()
-		var dr: float = float(pw.get("draw", 0.0))
-		draw_bar.set_value(dr / 9.0, "DRAW %.1f / %d" % [dr, int(pw.get("cap", 6))])
-		draw_bar.set_colour(UIK.c("red") if dr > float(pw.get("cap", 6)) else UIK.c("mustard"))
-		var ov: float = float(pw.get("overload", 0.0))
-		over.set_value(ov / 100.0, "BLACKOUT!" if float(pw.get("blackout", 0.0)) > 0.0 else "OVERLOAD %d%%" % int(ov))
-
 func on_key(k: Key, down: bool) -> bool:
-	if k == KEY_SPACE:
+	if k == KEY_R:
 		rep_btn.press_key(down)
 		return true
 	return false

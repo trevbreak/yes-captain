@@ -15,11 +15,18 @@ var layout_issues: Array = []
 
 func _ready() -> void:
 	_read_args()
+	UIK.touch_ui = DisplayServer.is_touchscreen_available() or args.has("touchui")
 	if args.has("server"):
 		_run_server()
 		return
+	if args.has("mock"):
+		_mock.call_deferred()
+		return
 	get_window().title = "Yes, Captain!"
-	get_window().min_size = Vector2i(1024, 600)
+	# a desktop window shouldn't shrink past usable; test runs may go phone-sized (--resolution 390x844)
+	# (never in a browser: there the "window" is the page, and a minimum wider than a phone pushes the game off-screen)
+	if not Web.on() and not (args.has("layoutcheck") or args.has("menushot") or args.has("touchtest")):
+		get_window().min_size = Vector2i(1024, 600)
 	layer = CanvasLayer.new()
 	add_child(layer)
 	root_ui = Control.new()
@@ -31,33 +38,51 @@ func _ready() -> void:
 	menu.solo_pressed.connect(_on_solo)
 	menu.online_pressed.connect(_on_online)
 	menu.quit_pressed.connect(func(): get_tree().quit())
-	root_ui.add_child(menu)
+	_screen(menu)
 	sessions = SessionsUI.new()
 	sessions.leave_pressed.connect(_leave)
 	sessions.visible = false
-	root_ui.add_child(sessions)
+	_screen(sessions)
 	lobby = LobbyUI.new()
 	lobby.leave_pressed.connect(_leave_room)
 	lobby.visible = false
-	root_ui.add_child(lobby)
+	_screen(lobby)
 	game = GameUI.new()
 	game.leave_pressed.connect(_leave_room)
 	game.visible = false
-	root_ui.add_child(game)
+	_screen(game)
 	var fx: Fx = Fx.new()
 	fx.target = root_ui
 	add_child(fx)
 	add_child(Film.new())
+	var ex: Explain = Explain.new()
+	ex.name = "Explain"
+	add_child(ex)
 	Net.event.connect(_on_event)
 	Net.join_failed.connect(func(r: String):
 		_show("menu")
 		menu.show_msg(r))
 	Net.disconnected.connect(func(r: String):
+		_hide_reconnect()
 		_leave()
 		menu.show_msg(r))
+	Net.reconnecting.connect(_show_reconnect)
+	Net.reconnected.connect(func():
+		_rejoining = true
+		_hide_reconnect())
+	_build_reconnect()
+	UIK.last_input = "touch" if DisplayServer.is_touchscreen_available() else "mouse"
 	_apply_args()
+	get_tree().root.size_changed.connect(_orient)
+	_orient()
 	# the title screen has its music too (browsers hold it back until the first click; then it starts)
 	UIK.music("menu")
+
+func _input(e: InputEvent) -> void:
+	# touch, mouse or keys: show the hints for whichever the player is using now
+	if UIK.note_input(e):
+		get_tree().call_group("input_hints", "queue_redraw")
+		get_tree().call_group("input_hints_labels", "_on_input_kind")
 
 func _process(delta: float) -> void:
 	Voice.poll(delta)
@@ -83,7 +108,9 @@ func _run_server() -> void:
 		tts.start(int(OS.get_environment("YC_TTS_PORT")) if OS.get_environment("YC_TTS_PORT") != "" else TtsServer.PORT)
 
 func _apply_args() -> void:
-	if args.has("autotest") or args.has("layoutcheck") or args.has("tour") or args.has("readmeshots") or args.has("shiftshots") or args.has("captainshots"):
+	if args.has("targets"):
+		LayoutCheck.min_target = float(args.targets)
+	if args.has("autotest") or args.has("layoutcheck") or args.has("tour") or args.has("readmeshots") or args.has("shiftshots") or args.has("captainshots") or args.has("pairshots") or args.has("touchtest"):
 		Progress.persist = false
 		Progress.forget_local()
 		Progress.local().unlock_all()
@@ -114,6 +141,8 @@ func _apply_args() -> void:
 		_autotest.call_deferred()
 	elif args.has("layoutcheck"):
 		_layoutcheck.call_deferred()
+	elif args.has("touchtest"):
+		_touchtest.call_deferred()
 	elif args.has("tour"):
 		_tour.call_deferred()
 	elif args.has("clienttest"):
@@ -122,6 +151,9 @@ func _apply_args() -> void:
 		args["shots"] = args.shiftshots
 		get_window().always_on_top = true
 		_shiftshots.call_deferred()
+	elif args.has("pairshots"):
+		args["shots"] = args.pairshots
+		_pairshots.call_deferred()
 	elif args.has("captainshots"):
 		args["shots"] = args.captainshots
 		get_window().always_on_top = true
@@ -132,6 +164,81 @@ func _apply_args() -> void:
 		args["shots"] = args.readmeshots
 		get_window().always_on_top = true
 		_readmeshots.call_deferred()
+
+# ---------------------------------------------------------------- lost the connection: hang on, get back in
+
+var _rejoining: bool = false
+var _rc_layer: CanvasLayer
+var _rc_text: Label
+var _rc_sub: Label
+
+func _build_reconnect() -> void:
+	_rc_layer = CanvasLayer.new()
+	_rc_layer.layer = 50
+	_rc_layer.visible = false
+	add_child(_rc_layer)
+	var dim: ColorRect = ColorRect.new()
+	dim.color = Color(0.1, 0.07, 0.05, 0.55)
+	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_rc_layer.add_child(dim)
+	var cc: CenterContainer = CenterContainer.new()
+	cc.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	cc.theme = UIK.theme()
+	_rc_layer.add_child(cc)
+	var w: Array = UIK.window("RECONNECTING", "mustard", "clock")
+	(w[0] as Control).custom_minimum_size = Vector2(520, 0)
+	cc.add_child(w[0])
+	var b: VBoxContainer = w[1]
+	_rc_text = UIK.para("", 24)
+	_rc_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	b.add_child(_rc_text)
+	_rc_sub = UIK.para("", 18, K.pal("ink_soft"))
+	_rc_sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	b.add_child(_rc_sub)
+	b.add_child(UIK.btn("Stop trying", "cream", func():
+		Net.give_up()
+		_hide_reconnect()
+		_leave()
+		menu.show_msg("Gave up on the crew room. The invite link still works."), "x", 18))
+
+func _show_reconnect(attempt: int, wait: float) -> void:
+	_rc_layer.visible = true
+	var mine: Array = Net.last_lobby.get("peers", {}).get(Net.my_id, {}).get("seats", [])
+	var seat: String = K.role_name(K.role_of(str(mine[0]))) if not mine.is_empty() else ""
+	_rc_text.text = ("Lost the connection. Your %s seat is safe: a robot is holding it." % seat) if seat != "" else "Lost the connection. Getting you back in."
+	_rc_sub.text = "Trying again in %d s (attempt %d)." % [int(ceil(wait)), attempt]
+
+func _hide_reconnect() -> void:
+	if _rc_layer != null:
+		_rc_layer.visible = false
+
+# ---------------------------------------------------------------- phones held upright
+
+var portrait: bool = false
+
+func _screen(ui: Control) -> void:
+	## every screen sits in a FitBox: on a small or squat display it shrinks to fit rather than spilling off
+	var fb: FitBox = FitBox.new()
+	fb.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	root_ui.add_child(fb)
+	fb.add_child(ui)
+	ui.visibility_changed.connect(func(): fb.visible = ui.visible)
+	fb.visible = ui.visible
+
+func _orient() -> void:
+	## an upright phone gets a 720-wide canvas (everything about twice the size it would be squeezed into 1280)
+	## and one-column screens; once the game starts it asks to be turned sideways
+	var ws: Vector2i = get_window().size
+	var p: bool = ws.y > ws.x * 1.05
+	var want: Vector2i = Vector2i(720, 1280) if p else Vector2i(1280, 720)
+	if p == portrait and get_window().content_scale_size == want:
+		return
+	portrait = p
+	get_window().content_scale_size = want
+	menu.set_portrait(p)
+	sessions.set_portrait(p)
+	lobby.set_portrait(p)
+	game.set_portrait(p)
 
 func _show(which: String) -> void:
 	if which != state:
@@ -204,8 +311,12 @@ func _on_event(d: Dictionary) -> void:
 			sessions.show_msg(str(d.get("text", "")))
 		"joined":
 			sessions.show_msg("")
-			game.reset()
 			Web.set_room_in_url(str(d.get("code", "")))
+			if _rejoining:
+				# back after a drop: stay on whatever screen we're on; the server says where the crew is now
+				_rejoining = false
+				return
+			game.reset()
 			_show("lobby")
 		"left", "kicked":
 			game.reset()
@@ -216,8 +327,9 @@ func _on_event(d: Dictionary) -> void:
 			if str(d.t) == "kicked":
 				Net.send("rooms")
 		"lobby":
-			if state in ["menu", "sessions"]:
+			if state in ["menu", "sessions"] or (state == "game" and str(d.get("phase", "")) == "lobby"):
 				menu.show_msg("")
+				game.reset()
 				_show("lobby")
 			if state == "lobby":
 				lobby.update_lobby(d)
@@ -284,6 +396,38 @@ func _play(id: String, seconds: float) -> void:
 	await _start_mission(id, K.SEATS, true)
 	await _launch()
 	await _wait(seconds)
+
+func _mock() -> void:
+	## render a design mock-up script (it reads its own arguments) to --out, then quit
+	get_window().always_on_top = true
+	UIK.set_grain(false)
+	var cl: CanvasLayer = CanvasLayer.new()
+	add_child(cl)
+	var ui: Control = load(str(args.mock)).new()
+	ui.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	cl.add_child(ui)
+	for i in 40:
+		await get_tree().process_frame
+	get_viewport().get_texture().get_image().save_png(str(args.get("out", "/tmp/mock.png")))
+	get_tree().quit(0)
+
+func _pairshots() -> void:
+	## each crew role's screen (two stations on one screen)
+	get_window().always_on_top = true
+	await _wait(1.0)
+	_on_solo("Tester")
+	await _wait(0.4)
+	Net.host.career.hard = true
+	await _start_mission("bigone", K.SEATS, true)
+	await _wait(0.8)
+	await _launch()
+	await _wait(2.0)
+	for rid in K.ROLES:
+		Net.send("release_all")
+		Net.send("claim", {"seat": rid})
+		await _wait(0.8)
+		await _shot(str(rid))
+	get_tree().quit(0)
 
 func _captainshots() -> void:
 	## the captain's chart just after a step is ticked, and once the tick has faded (for trying chart styles)
@@ -375,6 +519,165 @@ func _launch() -> void:
 	if Net.host != null and Net.host.phase == "briefing":
 		Net.host.force_launch()
 	await _wait(0.3)
+
+# ---------------------------------------------------------------- two thumbs at once
+
+var _touch_fails: Array = []
+
+func _finger(idx: int, at: Vector2, pressed: bool, drag: bool = false) -> void:
+	## a real touch, sent the way the browser sends it (so Godot also makes its pretend mouse from finger 0)
+	var w: Vector2 = get_viewport().get_final_transform() * at
+	var ev: InputEvent
+	if drag:
+		var dr: InputEventScreenDrag = InputEventScreenDrag.new()
+		dr.index = idx
+		dr.position = w
+		ev = dr
+	else:
+		var t: InputEventScreenTouch = InputEventScreenTouch.new()
+		t.index = idx
+		t.position = w
+		t.pressed = pressed
+		ev = t
+	Input.parse_input_event(ev)
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+func _centre(c: Control) -> Vector2:
+	return c.get_global_rect().get_center()
+
+func _touch_check(ok: bool, what: String) -> void:
+	print("TOUCH %s  %s" % ["ok  " if ok else "FAIL", what])
+	if not ok:
+		_touch_fails.append(what)
+
+func _touchtest() -> void:
+	## both thumbs on a desk at once: hold one control, work another, let go of one, the other carries on
+	await _wait(0.6)
+	_on_solo("Tester")
+	await _wait(0.6)
+	# ---- tap to explain (touch screens have no hover tooltips)
+	var ex: Explain = get_node("Explain")
+	var face: Control = (lobby.seat_cards["driver"] as Control).find_children("*", "TextureRect", true, false)[0]
+	await _finger(0, _centre(face), true)
+	await _finger(0, _centre(face), false)
+	await _wait(0.2)
+	_touch_check(ex.bubble.visible and ex.text_lbl.text == K.role_persona("driver"), "tap a face: a bubble says who it is ('%s')" % ex.text_lbl.text)
+	var hb: Button = lobby.hard_btn
+	var was: bool = hb.button_pressed
+	await _finger(0, _centre(hb), true)
+	await _wait(0.8)
+	await _finger(0, _centre(hb), false)
+	await _wait(0.3)
+	_touch_check(ex.bubble.visible and ex.text_lbl.text.begins_with("Off:") and hb.button_pressed == was and not bool(Net.last_lobby.get("hard", false)),
+		"hold a button: it explains itself and does NOT switch (hard mode still %s)" % str(Net.last_lobby.get("hard", false)))
+	await _finger(0, _centre(hb), true)
+	await _finger(0, _centre(hb), false)
+	await _wait(0.3)
+	_touch_check(bool(Net.last_lobby.get("hard", false)), "a quick tap on the same button still works (hard mode on)")
+	Net.send("opt", {"key": "hard", "val": false})
+	await _wait(0.2)
+	await _start_mission("hot", K.SEATS, false)
+	await _launch()
+	await _wait(1.0)
+	Net.host.autopilot = false
+	var w: World = Net.host.world
+	# ---- the Stoker: hold FIRE, turn the turret
+	Net.send("release_all")
+	Net.send("claim", {"seat": "stoker"})
+	await _wait(0.8)
+	var desk: RoleDesk = game.desks["stoker"]
+	var wp: WeaponsUI = desk.stations["weapons"]
+	var en: EnginesUI = desk.stations["engines"]
+	var aim0: float = w.ship.aim
+	await _finger(0, _centre(wp.fire_btn) - Vector2(0, 17), true)
+	await _wait(0.3)
+	_touch_check(w.ship.firing, "Stoker: finger 1 holds FIRE")
+	var dc: Vector2 = _centre(wp.dial)
+	var r: float = minf(wp.dial.size.x, wp.dial.size.y) * wp.dial.get_global_transform().get_scale().x * 0.3
+	await _finger(1, dc + Vector2(r, 0), true)
+	await _finger(1, dc + Vector2(0, r), false, true)
+	await _wait(0.3)
+	_touch_check(w.ship.firing and absf(K.wrap_pi(w.ship.aim - aim0)) > 0.3, "Stoker: finger 2 turns the turret while FIRE is held (aim %.2f -> %.2f)" % [aim0, w.ship.aim])
+	await _finger(0, _centre(wp.fire_btn) - Vector2(0, 17), false)
+	await _wait(0.3)
+	var aim1: float = w.ship.aim
+	_touch_check(not w.ship.firing, "Stoker: lifting finger 1 lets go of FIRE")
+	await _finger(1, dc + Vector2(-r, 0), false, true)
+	await _wait(0.3)
+	_touch_check(absf(K.wrap_pi(w.ship.aim - aim1)) > 0.3, "Stoker: finger 2 still turns the turret after finger 1 lifts")
+	await _finger(1, dc + Vector2(-r, 0), false)
+	# throttle with one thumb while firing with the other
+	var thr0: float = w.ship.throttle
+	await _finger(0, _centre(wp.fire_btn) - Vector2(0, 17), true)
+	var lv: Rect2 = en.lever.get_global_rect()
+	await _finger(1, Vector2(lv.get_center().x, lv.position.y + lv.size.y * 0.5), true)
+	await _finger(1, Vector2(lv.get_center().x, lv.position.y + lv.size.y * 0.15), false, true)
+	await _wait(0.3)
+	_touch_check(w.ship.firing and w.ship.throttle > thr0 + 0.2, "Stoker: throttle up with one thumb while firing with the other (%.2f -> %.2f)" % [thr0, w.ship.throttle])
+	await _finger(1, Vector2(lv.get_center().x, lv.position.y + lv.size.y * 0.15), false)
+	await _finger(0, _centre(wp.fire_btn) - Vector2(0, 17), false)
+	# ---- the Driver: hold LEFT, swing the shield
+	Net.send("release_all")
+	Net.send("claim", {"seat": "driver"})
+	await _wait(0.8)
+	var dd: RoleDesk = game.desks["driver"]
+	var hm: HelmUI = dd.stations["helm"]
+	var sh: ShieldsUI = dd.stations["shields"]
+	var sh0: float = w.ship.shield_dir
+	await _finger(0, _centre(hm.left_btn) - Vector2(0, 17), true)
+	await _wait(0.3)
+	_touch_check(w.ship.wheel < -0.5, "Driver: finger 1 holds LEFT (wheel %.2f)" % w.ship.wheel)
+	var sc: Vector2 = _centre(sh.dial)
+	var sr: float = minf(sh.dial.size.x, sh.dial.size.y) * sh.dial.get_global_transform().get_scale().x * 0.3
+	await _finger(1, sc + Vector2(0, sr), true)
+	await _finger(1, sc + Vector2(sr, 0), false, true)
+	await _wait(0.3)
+	_touch_check(w.ship.wheel < -0.5 and absf(K.wrap_pi(w.ship.shield_dir - sh0)) > 0.3, "Driver: finger 2 swings the shield while LEFT is held (shield %.2f -> %.2f)" % [sh0, w.ship.shield_dir])
+	await _finger(0, _centre(hm.left_btn) - Vector2(0, 17), false)
+	await _wait(0.3)
+	_touch_check(absf(w.ship.wheel) < 0.05, "Driver: lifting finger 1 straightens up")
+	await _finger(1, sc + Vector2(sr, 0), false)
+	# ---- a plain mouse still works (desktop players)
+	var mb: InputEventMouseButton = InputEventMouseButton.new()
+	mb.button_index = MOUSE_BUTTON_LEFT
+	mb.pressed = true
+	mb.position = get_viewport().get_final_transform() * (_centre(hm.right_btn) - Vector2(0, 17))
+	Input.parse_input_event(mb)
+	await _wait(0.3)
+	_touch_check(w.ship.wheel > 0.5, "mouse: holding RIGHT turns right")
+	var mu: InputEventMouseButton = mb.duplicate()
+	mu.pressed = false
+	Input.parse_input_event(mu)
+	await _wait(0.3)
+	_touch_check(absf(w.ship.wheel) < 0.05, "mouse: letting go straightens up")
+	# ---- rebinding a key (keyboard players)
+	Keys.bind("helm", KEY_A, KEY_J)
+	game._keys_changed()
+	var kj: InputEventKey = InputEventKey.new()
+	kj.physical_keycode = KEY_J
+	kj.pressed = true
+	Input.parse_input_event(kj)
+	await _wait(0.3)
+	_touch_check(w.ship.wheel < -0.5 and hm.left_btn.key_hint == "J", "keys: 'turn left' rebound to J turns left, and the button says J")
+	var kju: InputEventKey = kj.duplicate()
+	kju.pressed = false
+	Input.parse_input_event(kju)
+	var ka: InputEventKey = InputEventKey.new()
+	ka.physical_keycode = KEY_A
+	ka.pressed = true
+	Input.parse_input_event(ka)
+	await _wait(0.3)
+	_touch_check(absf(w.ship.wheel) < 0.05, "keys: the old key A no longer turns")
+	var kau: InputEventKey = ka.duplicate()
+	kau.pressed = false
+	Input.parse_input_event(kau)
+	Keys.reset()
+	game._keys_changed()
+	await _wait(0.2)
+	_touch_check(hm.left_btn.key_hint == "A", "keys: reset puts A back")
+	print("TOUCHTEST %s" % ("PASS" if _touch_fails.is_empty() else "FAIL %s" % str(_touch_fails)))
+	get_tree().quit(_touch_fails.size())
 
 func _layoutcheck() -> void:
 	## visit every screen and run the layout checker; exit code = number of issues
@@ -475,6 +778,12 @@ func _layoutcheck() -> void:
 		Net.send("active", {"seat": seat2})
 		await _wait(0.6)
 		await _check("stress_" + seat2)
+	# the crew roles: one player, two stations, one screen
+	for rid in K.ROLES:
+		Net.send("release_all")
+		Net.send("claim", {"seat": rid})
+		await _wait(0.7)
+		await _check("role_" + str(rid))
 	Net.host.autopilot = true
 	Net.host._sync_bots()
 	game.pause_panel.visible = true

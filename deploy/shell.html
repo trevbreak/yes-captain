@@ -22,6 +22,17 @@ h2 { margin: 6px 0 22px; font-size: clamp(13px, 2vw, 20px); letter-spacing: 2px;
 #quip { margin-top: 16px; font-size: clamp(14px, 2vw, 20px); min-height: 2.6em; }
 #quip b { color: #c9413a; }
 #status-notice { display: none; margin-top: 14px; padding: 10px 14px; border: 4px solid #c9413a; border-radius: 12px; background: #fff; }
+/* a real text box for phones: the game's own boxes can't call up an on-screen keyboard */
+#ycask { position: fixed; inset: 0; z-index: 50; display: flex; align-items: flex-start; justify-content: center;
+	background: rgba(29, 23, 18, 0.55); touch-action: auto; padding-top: 12vh; }
+#ycask form { border: 5px solid #1d1712; border-radius: 22px 16px 24px 14px; background: #fbf2dc; padding: 16px 18px 18px;
+	box-shadow: 6px 7px 0 #1d1712; width: min(92vw, 460px); box-sizing: border-box; }
+#ycask label { display: block; font-size: 20px; font-weight: bold; margin-bottom: 10px; letter-spacing: 1px; }
+#ycask .row { display: flex; gap: 10px; }
+#ycask input { flex: 1; min-width: 0; font: inherit; font-size: 22px; padding: 10px 12px; border: 4px solid #1d1712;
+	border-radius: 12px; background: #fffaf0; color: #1d1712; }
+#ycask button { font: inherit; font-size: 20px; font-weight: bold; padding: 0 18px; border: 4px solid #1d1712; border-radius: 12px;
+	background: #6f9a4a; color: #fffaf0; }
 </style>
 $GODOT_HEAD_INCLUDE
 </head>
@@ -118,6 +129,70 @@ const engine = new Engine(GODOT_CONFIG);
 			if (current > 0 && total > 0) { fill.style.width = Math.round(100 * current / total) + '%'; }
 		},
 	}).then(() => { clearInterval(timer); overlay.remove(); }, fail);
+}());
+</script>
+<script>
+// YCAsk(title, value, maxLength, done): a native text box over the game, so phones get their keyboard.
+// done(text, submitted) is called once: submitted is false when the player taps outside to cancel.
+window.YCAsk = function (title, value, max, done) {
+	var old = document.getElementById('ycask');
+	if (old) { old.remove(); }
+	var wrap = document.createElement('div');
+	wrap.id = 'ycask';
+	var form = document.createElement('form');
+	var label = document.createElement('label');
+	label.textContent = title;
+	var row = document.createElement('div');
+	row.className = 'row';
+	var input = document.createElement('input');
+	input.type = 'text';
+	input.value = value || '';
+	input.autocomplete = 'off';
+	input.setAttribute('autocapitalize', 'words');
+	input.setAttribute('enterkeyhint', 'done');
+	if (max > 0) { input.maxLength = max; }
+	var ok = document.createElement('button');
+	ok.type = 'submit';
+	ok.textContent = 'OK';
+	row.appendChild(input);
+	row.appendChild(ok);
+	form.appendChild(label);
+	form.appendChild(row);
+	wrap.appendChild(form);
+	var finished = false;
+	function finish(submitted) {
+		if (finished) { return; }
+		finished = true;
+		var v = input.value;
+		wrap.remove();
+		var c = document.getElementById('canvas');
+		if (c) { c.focus(); }
+		done(submitted ? v : (value || ''), submitted);
+	}
+	form.addEventListener('submit', function (e) { e.preventDefault(); finish(true); });
+	wrap.addEventListener('pointerdown', function (e) { if (e.target === wrap) { e.preventDefault(); finish(true); } });
+	// keep the game from hearing these keys
+	['keydown', 'keyup', 'keypress'].forEach(function (k) { form.addEventListener(k, function (e) { e.stopPropagation(); }); });
+	document.body.appendChild(wrap);
+	input.focus();
+	try { input.setSelectionRange(input.value.length, input.value.length); } catch (e) {}
+};
+</script>
+<script>
+// Keep the screen awake while the game is open: a phone that dims and locks during a briefing drops its connection.
+// Browsers only grant this to a visible page, after the player has touched it, so ask then, and again on coming back.
+(function () {
+	if (!('wakeLock' in navigator)) { return; }
+	var lock = null;
+	function want() {
+		if (lock !== null || document.visibilityState !== 'visible') { return; }
+		navigator.wakeLock.request('screen').then(function (l) {
+			lock = l;
+			l.addEventListener('release', function () { lock = null; });
+		}).catch(function () {});
+	}
+	['pointerdown', 'keydown', 'touchend'].forEach(function (k) { document.addEventListener(k, want, { passive: true }); });
+	document.addEventListener('visibilitychange', want);
 }());
 </script>
 <script src="voice.js"></script>

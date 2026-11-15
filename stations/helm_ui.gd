@@ -9,53 +9,95 @@ var head_lbl: Label
 var pull_lbl: Label
 var roll_box: VBoxContainer
 var roll_btn: BigButton
-var _key_t: float = 0.0
+var left_btn: BigButton
+var right_btn: BigButton
+var _left: bool = false
+var _right: bool = false
+var _sent: float = 0.0
+var _shown: float = 0.0          # where the wheel is drawn: it swings round to where the ship's wheel really is
 
 func _init() -> void:
 	super("helm")
 
 func build() -> void:
+	# hold an arrow to turn at a steady rate; let go (or hold both) and the ship flies straight.
+	# The wheel in the middle shows it, so the captain's "hard left!" still means something.
+	left_btn = BigButton.new("LEFT", "blue", true, 120)
+	left_btn.arrow = -1
+	keyed(left_btn, KEY_A)
+	left_btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	left_btn.held.connect(func(on: bool):
+		_left = on
+		_steer())
+	hero.add_child(left_btn)
 	wheel = ShipWheel.new()
-	wheel.custom_minimum_size = Vector2(400, 400)
-	wheel.changed.connect(func(v: float): send("wheel", v))
+	wheel.disabled = true
+	wheel.mouse_default_cursor_shape = Control.CURSOR_ARROW
+	wheel.custom_minimum_size = Vector2(340, 340)
+	wheel.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	hero.add_child(wheel)
+	right_btn = BigButton.new("RIGHT", "blue", true, 120)
+	right_btn.arrow = 1
+	keyed(right_btn, KEY_D)
+	right_btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	right_btn.held.connect(func(on: bool):
+		_right = on
+		_steer())
+	hero.add_child(right_btn)
 	var col: VBoxContainer = UIK.vbox(10)
 	col.alignment = BoxContainer.ALIGNMENT_CENTER
 	hero.add_child(col)
 	compass = CompassDial.new()
-	compass.custom_minimum_size = Vector2(250, 250)
+	compass.custom_minimum_size = Vector2(240, 240)
 	col.add_child(compass)
 	head_lbl = UIK.title("000°", 54, UIK.c("cream"), HORIZONTAL_ALIGNMENT_CENTER)
 	col.add_child(head_lbl)
-	col.add_child(UIK.btn("Straighten up", "cream", func():
-		wheel.set_value(0.0, true), "", 20))
 	pull_lbl = UIK.para("", 20, UIK.c("red"))
 	pull_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	pull_lbl.custom_minimum_size = Vector2(250, 0)
+	pull_lbl.custom_minimum_size = Vector2(240, 0)
 	col.add_child(pull_lbl)
 	roll_box = side_window("BARREL ROLL", "blue", "helm")
 	roll_box.add_child(UIK.para("Dodge sideways: shots miss while you roll. Wait for the captain's shout!", 19))
 	roll_btn = BigButton.new("ROLL!", "blue", false, 120)
-	roll_btn.key_hint = "R"
+	keyed(roll_btn, KEY_R)
 	roll_btn.pressed_once.connect(func(): send("roll", true))
 	roll_box.add_child(UIK.center(roll_btn))
-	keys_lbl.text = "Drag the wheel round, or A / D.   S straightens up.   It stays where you leave it."
+	keys_lbl.text = "HOLD an arrow (or A / D) to turn. Let go to fly straight."
+
+func _steer() -> void:
+	var d: float = (1.0 if _right else 0.0) - (1.0 if _left else 0.0)
+	if d != _sent:
+		_sent = d
+		send("wheel", d)
+
+func _process(dt: float) -> void:
+	super._process(dt)
+	if is_visible_in_tree():
+		wheel.set_value(lerpf(wheel.value, _shown, 1.0 - exp(-9.0 * dt)))
+
+func release_all() -> void:
+	super.release_all()
+	_left = false
+	_right = false
+	if left_btn != null:
+		left_btn.press_key(false)
+		right_btn.press_key(false)
+	_sent = 0.0
 
 func refresh(v: Dictionary, _com: Dictionary) -> void:
-	if not wheel._drag:
-		wheel.set_value(float(v.get("wheel", 0.0)))
+	_shown = float(v.get("wheel", 0.0))
 	compass.heading = float(v.get("heading", 0))
 	compass.queue_redraw()
 	head_lbl.text = "%03d°" % int(v.get("heading", 0))
 	var msg: String = ""
 	if not bool(v.get("steer_ok", true)):
-		msg = "Steering is BROKEN: turns are slow. Ask the Engineer!"
+		msg = "Steering is BROKEN: turns are slow. Ask the Tech!"
 	elif float(v.get("pull", 0.0)) < 0.0:
-		msg = "The ship is pulling LEFT (an engine is out). Steer right to fly straight."
+		msg = "The ship is pulling LEFT (an engine is out). Nudge RIGHT to fly straight."
 	elif float(v.get("pull", 0.0)) > 0.0:
-		msg = "The ship is pulling RIGHT (an engine is out). Steer left to fly straight."
+		msg = "The ship is pulling RIGHT (an engine is out). Nudge LEFT to fly straight."
 	elif bool(v.get("shaking", false)):
-		msg = "Spinning! Hold it to shake off grabbers."
+		msg = "Spinning! Keep holding to shake off grabbers."
 	pull_lbl.text = msg
 	roll_box.get_parent().get_parent().visible = feat("roll")
 	var cd: float = float(v.get("roll_cd", 0.0))
@@ -65,16 +107,10 @@ func refresh(v: Dictionary, _com: Dictionary) -> void:
 func on_key(k: Key, down: bool) -> bool:
 	match k:
 		KEY_A, KEY_LEFT:
-			if down:
-				wheel.set_value(wheel.value - 0.25, true)
+			left_btn.press_key(down)
 			return true
 		KEY_D, KEY_RIGHT:
-			if down:
-				wheel.set_value(wheel.value + 0.25, true)
-			return true
-		KEY_S, KEY_DOWN:
-			if down:
-				wheel.set_value(0.0, true)
+			right_btn.press_key(down)
 			return true
 		KEY_R:
 			if down and feat("roll"):

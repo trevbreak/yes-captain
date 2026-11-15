@@ -42,7 +42,32 @@ static func helm(w: World) -> Dictionary:
 static func engines(w: World) -> Dictionary:
 	var s: Ship = w.ship
 	return {"throttle": s.throttle, "speed": snappedf(s.speed(), 0.1), "max": Ship.MAX_SPEED * (1.65 if w.feat("boost") else 1.0),
-		"port": str(s.sys.engine_p.state), "star": str(s.sys.engine_s.state), "heat": snappedf(s.engine_heat, 0.1), "boost": s.boost}
+		"port": str(s.sys.engine_p.state), "star": str(s.sys.engine_s.state), "heat": snappedf(s.engine_heat, 0.1), "boost": s.boost,
+		"power": _power(w)}
+
+static func _power(w: World) -> Dictionary:
+	## the reactor's power bars: the Stoker's to share out (engines, gun, shield)
+	var s: Ship = w.ship
+	if not w.feat("power"):
+		return {}
+	return {"bars": s.power, "draw": snappedf(s.draw, 0.01), "cap": s.power_cap, "overload": snappedf(s.overload, 0.1),
+		"blackout": snappedf(s.blackout_t, 0.1)}
+
+static func _tractor(w: World) -> Dictionary:
+	## the tractor beam: the Tech's, worked from the radar
+	var s: Ship = w.ship
+	if not w.feat("tractor"):
+		return {}
+	var best: Dictionary = {}
+	var bd: float = 99999.0
+	for e in w.ents:
+		if e.alive and e.tractor:
+			var d: float = e.pos.distance_to(s.pos)
+			if d < bd:
+				bd = d
+				best = e
+	return {"on": s.tractor_on, "ok": s.ok("tractor"), "range": World.TRACTOR_RANGE,
+		"nearest": str(best.get("name", "")), "dist": snappedf(bd, 1.0) if not best.is_empty() else -1.0, "pulling": s.tractor_target >= 0}
 
 static func weapons(w: World) -> Dictionary:
 	var s: Ship = w.ship
@@ -93,22 +118,10 @@ static func sensors(w: World) -> Dictionary:
 		comms = {"from": w.hail.from, "signal": snappedf(float(w.hail.get("signal", 0.0)), 0.01), "lock": snappedf(float(w.hail.lock_t), 0.01),
 			"heard": w.hail.heard, "text": str(w.hail.text) if w.hail.heard else ""}
 	return {"ok": ok, "range": w.radar_range, "blips": blips if ok else [], "selected": w.scan_target, "scanning": w.scanning,
-		"prog": snappedf(w.scan_prog, 0.01), "freq": w.comms_freq, "comms": comms}
+		"prog": snappedf(w.scan_prog, 0.01), "freq": w.comms_freq, "comms": comms, "tractor": _tractor(w)}
 
 static func shields(w: World) -> Dictionary:
 	var s: Ship = w.ship
-	var tr: Dictionary = {}
-	if w.feat("tractor"):
-		var best: Dictionary = {}
-		var bd: float = 99999.0
-		for e in w.ents:
-			if e.alive and e.tractor:
-				var d: float = e.pos.distance_to(s.pos)
-				if d < bd:
-					bd = d
-					best = e
-		tr = {"on": s.tractor_on, "ok": s.ok("tractor"), "range": World.TRACTOR_RANGE,
-			"nearest": str(best.get("name", "")), "dist": snappedf(bd, 1.0) if not best.is_empty() else -1.0, "pulling": s.tractor_target >= 0}
 	var pud: Dictionary = {}
 	if w.feat("pudding"):
 		pud = {"mood": snappedf(s.pud_mood, 0.1), "out": s.pud_out, "snacks": s.snacks, "tin": snappedf(s.tin_prog, 0.01), "petting": s.petting}
@@ -121,7 +134,7 @@ static func shields(w: World) -> Dictionary:
 	for e in w.ents:
 		if e.alive and e.latched:
 			stuck.append(snappedf(float(e.rel), 0.01))
-	return {"dir": s.shield_dir, "ok": s.ok("shield"), "hits": hits, "tractor": tr, "pudding": pud, "stuck": stuck}
+	return {"dir": s.shield_dir, "ok": s.ok("shield"), "hits": hits, "pudding": pud, "stuck": stuck}
 
 static func engineer(w: World) -> Dictionary:
 	var s: Ship = w.ship
@@ -132,16 +145,12 @@ static func engineer(w: World) -> Dictionary:
 	for e in w.ents:
 		if e.alive and e.latched:
 			stuck.append(s.side_system(float(e.rel)))
-	var pw: Dictionary = {}
-	if w.feat("power"):
-		pw = {"bars": s.power, "draw": snappedf(s.draw, 0.01), "cap": s.power_cap, "overload": snappedf(s.overload, 0.1),
-			"blackout": snappedf(s.blackout_t, 0.1)}
 	var sel_g: Dictionary = w.glitch_in(s.repair_target) if s.repair_target != "" else {}
 	return {"systems": systems, "selected": s.repair_target, "repairing": s.repairing,
 		"prog": snappedf(maxf(s.repair_prog, float(sel_g.get("fix", 0.0))), 0.01),
 		"glitches": Glitches.engineer_info(w), "resting": w.resting(s.repair_target) if s.repair_target != "" else false,
 		"rest_tip": World.rest_tip(s.repair_target),
-		"power": pw, "pudding_room": s.pud_room if (w.feat("pudding") and s.pud_out) else "", "stuck": stuck, "stuck_rel": _stuck(w)}
+		"pudding_room": s.pud_room if (w.feat("pudding") and s.pud_out) else "", "stuck": stuck, "stuck_rel": _stuck(w)}
 
 # ---------------------------------------------------------------- the captain
 
@@ -243,6 +252,8 @@ static func crew_lines(w: World) -> Dictionary:
 	elif s.boost and w.feat("boost"):
 		ew = "BOOSTING"
 		ea = 1
+	if ew == "" and w.feat("power"):
+		ew = "power %d / %d / %d" % [int(s.power.engines), int(s.power.weapons), int(s.power.shields)]
 	out["engines"] = {"text": "Throttle %d%% · %d m/s" % [int(round(s.throttle * 100.0)), int(s.speed())], "warn": ew, "alert": ea}
 	# weapons
 	var wt: String = "Gun at %d o'clock%s" % [K.clock(s.aim), " · FIRING" if s.firing else ""]
@@ -279,11 +290,11 @@ static func crew_lines(w: World) -> Dictionary:
 	elif unknown > 0:
 		sw = "%d unknown to scan" % unknown
 		sa = 1
+	if s.tractor_on and w.feat("tractor"):
+		st = "PULLING" if st == "Idle" else st + " · PULLING"
 	out["sensors"] = {"text": st, "warn": sw, "alert": sa}
 	# shields
 	var sht: String = "Shield at %d o'clock" % K.clock(s.shield_dir)
-	if s.tractor_on and w.feat("tractor"):
-		sht += " · PULLING"
 	var shw: String = ""
 	var sha: int = 0
 	if not s.ok("shield"):
@@ -316,8 +327,6 @@ static func crew_lines(w: World) -> Dictionary:
 		else:
 			gw = "%d glitch%s to fix" % [w.glitches.size(), "" if w.glitches.size() == 1 else "es"]
 		ga = 1
-	elif w.feat("power"):
-		gw = "power %d / %d / %d" % [int(s.power.engines), int(s.power.weapons), int(s.power.shields)]
 	out["engineer"] = {"text": gt, "warn": gw, "alert": ga}
 	return out
 
@@ -326,7 +335,7 @@ static func forecasts(w: World) -> Array:
 	var s: Ship = w.ship
 	var out: Array = []
 	if s.blackout_t > 0.0:
-		out.append({"text": "BLACKOUT! Power back in %ds" % int(ceil(s.blackout_t)), "level": 3, "who": "engineer"})
+		out.append({"text": "BLACKOUT! Power back in %ds" % int(ceil(s.blackout_t)), "level": 3, "who": "engines"})
 	var inc: Array = w.incoming()
 	var worst: Dictionary = {}
 	for i in inc:
@@ -341,7 +350,7 @@ static func forecasts(w: World) -> Array:
 				"who": "helm" if w.feat("roll") else "shields"})
 	var oe: float = w.overload_eta()
 	if oe >= 0.0 and oe < 10.0:
-		out.append({"text": "Reactor overload in %ds! (drawing %.1f of %d)" % [int(ceil(oe)), s.draw, int(s.power_cap)], "level": 3, "who": "engineer"})
+		out.append({"text": "Reactor overload in %ds! (drawing %.1f of %d)" % [int(ceil(oe)), s.draw, int(s.power_cap)], "level": 3, "who": "engines"})
 	var he: float = w.engine_heat_eta()
 	if he >= 0.0 and he < 10.0:
 		out.append({"text": "Engines overheat in %ds" % int(ceil(he)), "level": 2 if he > 4.0 else 3, "who": "engines"})

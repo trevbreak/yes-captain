@@ -12,6 +12,8 @@ var msg: Label
 var who_lbl: Label
 var host_btn: Button
 var _sig: String = ""
+var main_box: BoxContainer
+var list_win: Control
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -30,14 +32,18 @@ func _ready() -> void:
 	var lb: Button = UIK.btn("Back", "red", func(): leave_pressed.emit(), "back", 20)
 	lb.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	top.add_child(lb)
-	var main: HBoxContainer = UIK.hbox(14)
+	var main: BoxContainer = BoxContainer.new()
+	main.add_theme_constant_override("separation", 14)
 	main.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	root.add_child(main)
+	main_box = main
 	# open crews
 	var ow: Array = UIK.window("CREWS LOOKING FOR HANDS", "blue", "crew")
 	ow[0].size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	ow[0].size_flags_stretch_ratio = 1.7
+	ow[0].size_flags_vertical = Control.SIZE_EXPAND_FILL
 	main.add_child(ow[0])
+	list_win = ow[0]
 	var sc: ScrollContainer = ScrollContainer.new()
 	sc.set_meta("scroll_ok", true)
 	sc.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -59,6 +65,7 @@ func _ready() -> void:
 	name_edit.placeholder_text = "e.g. The Bin Lids"
 	name_edit.text_submitted.connect(func(_t: String): _host())
 	hb.add_child(name_edit)
+	Web.native_text(name_edit, "CREW NAME")
 	host_btn = UIK.btn("Open a crew room", "green", _host, "play", 24)
 	host_btn.custom_minimum_size = Vector2(0, 58)
 	hb.add_child(host_btn)
@@ -73,6 +80,7 @@ func _ready() -> void:
 	code_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	code_edit.text_submitted.connect(func(_t2: String): _join_code())
 	cr.add_child(code_edit)
+	Web.native_text(code_edit, "CREW CODE (FOUR LETTERS)")
 	cr.add_child(UIK.btn("Join", "orange", _join_code, "play", 22))
 	msg = UIK.para("", 20, UIK.c("red"))
 	right.add_child(msg)
@@ -142,18 +150,23 @@ func _row(r: Dictionary) -> Control:
 	# who they still need: faces of the empty seats
 	var need: HBoxContainer = UIK.hbox(-8)
 	need.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	for s in (r.get("open", []) as Array).slice(0, 7):
-		var f: TextureRect = UIK.portrait(str(s), 34)
+	for s in (r.get("open", []) as Array).slice(0, 4):
+		var f: TextureRect = UIK.portrait(K.role_face(str(s)), 34)
 		f.modulate = Color(1, 1, 1, 0.55)
-		f.tooltip_text = "%s is free" % K.seat_name(str(s))
+		f.tooltip_text = "%s is free" % K.role_name(str(s))
 		f.mouse_filter = Control.MOUSE_FILTER_PASS
 		need.add_child(f)
 	h.add_child(need)
 	var n: int = int(r.get("players", 0))
-	var cnt: PanelContainer = UIK.chip("%d / %d" % [n, int(r.get("max", 7))], "green" if n < int(r.get("max", 7)) else "steel", "crew", 18)
+	var cnt: PanelContainer = UIK.chip("%d / %d" % [n, int(r.get("max", 4))], "green" if n < int(r.get("max", 4)) else "steel", "crew", 18)
 	cnt.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	h.add_child(cnt)
 	var jb: Button = UIK.btn("Join", "green", func(): Net.send("join", {"code": code}), "play", 22)
 	jb.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	h.add_child(jb)
 	return p
+
+func set_portrait(p: bool) -> void:
+	## a phone held upright: the crews above, "start your own" and "got a code" below
+	main_box.vertical = p
+	list_win.custom_minimum_size = Vector2(0, 520) if p else Vector2.ZERO

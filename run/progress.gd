@@ -15,6 +15,7 @@ var best_pay: int = 0
 var stickers: Dictionary = {}   # award title -> times earned
 var is_local: bool = false
 var full_deck: bool = false      # online crews: every glitch, place and snag from the first shift (not saved)
+var hard: bool = false           # hard mode: the comms dial, torpedoes and the old breakneck pace (a room option, not saved)
 
 static func local() -> Progress:
 	## this player's own career

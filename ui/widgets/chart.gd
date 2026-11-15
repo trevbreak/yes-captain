@@ -203,7 +203,11 @@ func _draw() -> void:
 			draw_line(t1, p2, _ink, 7.0, true)
 			draw_line(t1, p2, UIK.c("mustard"), 4.0, true)
 		else:
-			draw_circle(p2, 3.5, _ink)
+			# our laser: a short glowing streak along its line of flight
+			var t2: Vector2 = p2 - Vector2.from_angle(float(s.dir)) * 22.0
+			draw_line(t2, p2, _ink, 7.0, true)
+			draw_line(t2, p2, UIK.c("teal").lightened(0.35), 4.5, true)
+			draw_line(t2.lerp(p2, 0.3), p2, UIK.c("white"), 2.0, true)
 	# effects
 	for fx in v.get("fx", []):
 		var p3: Vector2 = to_s.call(Vector2(float(fx.x), float(fx.y)))

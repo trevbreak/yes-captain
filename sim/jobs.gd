@@ -168,7 +168,7 @@ class Job extends Mission:
 	var asks_before: int = 0
 	var required_asks: Array = []
 	# the director
-	var dir_t: float = 14.0
+	var dir_t: float = 14.0            # the first trouble (normal mode waits longer: see build())
 	var route: Array = []
 	var meteor_t: float = 6.0
 	var end_pos: Vector2 = Vector2.ZERO
@@ -186,6 +186,8 @@ class Job extends Mission:
 		story = str(spec.get("blurb", ""))
 		par = float(t.par) * (0.68 if has("rush") else 1.0)
 		w.rng.seed = int(spec.get("seed", 1))
+		if not w.feat("hard"):
+			dir_t = 24.0
 		# the way through: a wobbly line heading north
 		var p: Vector2 = Vector2.ZERO
 		route = [p]
@@ -332,9 +334,9 @@ class Job extends Mission:
 		w.spawn("haven", dock, {"tag": "dock", "scanned": true, "name": "The depot"})
 		for i in 3:
 			add("Haul in the skips with the tractor beam (%d of 3)" % (i + 1), {
-				"shields": "Hold TRACTOR when your screen says a skip is in range.",
+				"sensors": "Hold PULL when your screen says a skip is in range.",
 				"engines": "Get close, then slow right down.",
-				"captain": "Get close, get slow, then shout TRACTOR."},
+				"captain": "Get close, get slow, then shout PULL."},
 				func(): return count("cargo_in") >= i + 1, Callable(), func(): return _nearest_cargo(), {"seek": "tractor", "stop": 85.0})
 		_dock_step("dock", "Drop them off: stop right next to the depot")
 
@@ -502,14 +504,16 @@ class Job extends Mission:
 		if dir_t > 0.0:
 			return
 		var danger: int = int(spec.get("danger", 2))
-		if _trouble() >= 2 + danger / 2:
-			dir_t = 5.0      # they have enough on: let them breathe
+		var hard: bool = w.feat("hard")
+		# people need time to spot it, say it, and do it: normal mode waits for the crew to be clear of trouble
+		if _trouble() >= (2 + danger / 2 if hard else 1 + danger / 3):
+			dir_t = 5.0 if hard else 8.0      # they have enough on: let them breathe
 			return
-		var gap: float = lerpf(25.0, 15.0, clampf(float(danger - 1) / 4.0, 0.0, 1.0))
+		var gap: float = lerpf(25.0, 15.0, clampf(float(danger - 1) / 4.0, 0.0, 1.0)) * (1.0 if hard else 1.9)
 		dir_t = w.rng.randf_range(gap * 0.75, gap * 1.25)
 		var opts: Array = []
 		var gl: Array = Glitches.available(w, glitch_deck)
-		if not gl.is_empty() and w.glitches.size() < 2:
+		if not gl.is_empty() and w.glitches.size() < (2 if hard else 1):
 			for k in (8 if has("glitchy") else 5):
 				opts.append("glitch")
 		var task: String = str(spec.task)
@@ -574,7 +578,7 @@ class Job extends Mission:
 		elif spec.place == "shower":
 			meteor_t -= dt
 			if meteor_t <= 0.0:
-				meteor_t = w.rng.randf_range(6.0, 10.0)
+				meteor_t = w.rng.randf_range(6.0, 10.0) * (1.0 if w.feat("hard") else 1.6)
 				throw_junk("rock", 95.0, 450.0)
 		if task == "nest" and step == 0 and step_t > 20.0 and count("wave2") == 0:
 			counters["wave2"] = 1

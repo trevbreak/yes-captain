@@ -19,6 +19,7 @@ var empty_close_s: float = 90.0   # an empty room waits this long for someone to
 var rooms: Dictionary = {}        # code -> {host: GameHost, name, code, listed, empty_t, idle_t}
 var peer_room: Dictionary = {}    # peer -> code
 var peer_name: Dictionary = {}    # peer -> name (said hello)
+var peer_token: Dictionary = {}   # peer -> the browser's private rejoin token (gets your seat back after a drop)
 var _rate: Dictionary = {}        # peer -> messages this second
 var _rate_t: float = 0.0
 var _list_t: float = 0.0
@@ -38,6 +39,7 @@ func handle(peer: int, kind: String, raw: Dictionary) -> void:
 	match kind:
 		"hello":
 			peer_name[peer] = clean_name(str(d.get("name", "")))
+			peer_token[peer] = clean_token(d.get("token", ""))
 			_send_rooms(peer)
 		"rooms":
 			if peer_name.has(peer):
@@ -62,7 +64,18 @@ func drop(peer: int) -> void:
 	## the connection went away
 	_leave(peer, false)
 	peer_name.erase(peer)
+	peer_token.erase(peer)
 	_rate.erase(peer)
+
+static func clean_token(t: Variant) -> String:
+	## letters and digits only, 8 to 32 of them; anything else is no token
+	if not (t is String):
+		return ""
+	var out: String = ""
+	for ch in (t as String).left(32):
+		if (ch >= "a" and ch <= "z") or (ch >= "A" and ch <= "Z") or (ch >= "0" and ch <= "9"):
+			out += ch
+	return out if out.length() >= 8 else ""
 
 static func clean_name(n: String) -> String:
 	var out: String = ""
@@ -145,6 +158,7 @@ func _create(peer: int, rname: String, career: Variant) -> void:
 	print("HUB room %s opened by %s (%d open)" % [code, peer_name[peer], rooms.size()])
 	_list_t = 99.0
 	_enter(peer, code)
+	h.claim_role(peer, "captain")   # whoever opens the room usually has the TV: they start as Captain
 
 func _join(peer: int, code: String) -> void:
 	if not rooms.has(code):
@@ -152,7 +166,11 @@ func _join(peer: int, code: String) -> void:
 		_send_rooms(peer)
 		return
 	var h: GameHost = rooms[code].host
-	if h.live_peers().size() >= K.SEATS.size() + WATCHERS:
+	var returning: bool = false
+	for pid in h.peers.keys():
+		if str(peer_token.get(peer, "")) != "" and str(h.peers[pid].get("token", "")) == str(peer_token.get(peer, "")):
+			returning = true
+	if h.live_peers().size() >= K.CREW.size() + WATCHERS and not returning:
 		send_event.emit(peer, {"t": "hub_error", "text": "That crew is full."})
 		return
 	_enter(peer, code)
@@ -162,7 +180,7 @@ func _enter(peer: int, code: String) -> void:
 	var h: GameHost = r.host
 	peer_room[peer] = code
 	send_event.emit(peer, {"t": "joined", "code": code, "name": r.name})
-	h.add_peer(peer, str(peer_name[peer]))
+	h.add_peer(peer, str(peer_name[peer]), str(peer_token.get(peer, "")))
 	if h.admin == 0 or not h.peers.has(h.admin) or h.peers[h.admin].get("gone", false):
 		h.admin = peer
 		h._send_lobby()
@@ -230,10 +248,10 @@ func room_list() -> Array:
 		if h.phase != "lobby" and h.mission != null:
 			doing = "%s: %s" % ["Briefing" if h.phase == "briefing" else ("Debrief" if h.phase == "debrief" else "Flying"), h.mission.title]
 		var open: Array = []
-		for s in K.SEATS:
-			if not h.seat_owner.has(s):
+		for s in K.CREW:
+			if not h.seat_owner.has(str(K.role_seats(s)[0])):
 				open.append(s)
-		out.append({"code": code, "name": r.name, "host": hostname, "players": h.live_peers().size(), "max": K.SEATS.size(),
+		out.append({"code": code, "name": r.name, "host": hostname, "players": h.live_peers().size(), "max": K.CREW.size(),
 			"doing": doing, "phase": h.phase, "open": open})
 	out.sort_custom(func(a, b): return str(a.code) < str(b.code))
 	return out

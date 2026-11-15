@@ -33,6 +33,11 @@ func tick(w: World, dt: float) -> void:
 			_shields(w)
 		"engineer":
 			_engineer(w)
+	# the Tech works the tractor beam from the radar; the Stoker shares out the reactor's power
+	if station == "sensors":
+		_tractor(w)
+	elif station == "engines":
+		_power(w)
 
 ## how fast a robot can drag a dial (radians per second), so it isn't superhuman
 const DIAL_RATE: float = 2.6
@@ -368,12 +373,6 @@ func _shields(w: World) -> void:
 			want = K.wrap_pi((th.pos - s.pos).angle() - s.heading)
 	if want != null:
 		dial(w, "dir", s.shield_dir, float(want))
-	if w.feat("tractor"):
-		var any: bool = false
-		for e3 in w.ents:
-			if e3.alive and e3.tractor and e3.pos.distance_to(s.pos) < World.TRACTOR_RANGE:
-				any = true
-		act(w, "tractor", any and (not w.feat("power") or s.overload < 40.0))
 	if w.feat("pudding"):
 		if s.pud_out:
 			act(w, "tin", true)
@@ -408,6 +407,18 @@ func _engineer(w: World) -> void:
 		act(w, "repair", true)
 	else:
 		act(w, "repair", false)
+
+func _tractor(w: World) -> void:
+	var s: Ship = w.ship
+	if w.feat("tractor"):
+		var any: bool = false
+		for e3 in w.ents:
+			if e3.alive and e3.tractor and e3.pos.distance_to(s.pos) < World.TRACTOR_RANGE:
+				any = true
+		act(w, "tractor", any and (not w.feat("power") or s.overload < 40.0))
+
+func _power(w: World) -> void:
+	var s: Ship = w.ship
 	if w.feat("power"):
 		var fighting: bool = not threats(w).is_empty()
 		var e: int = 2

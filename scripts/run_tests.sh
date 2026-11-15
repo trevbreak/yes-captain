@@ -30,15 +30,25 @@ SEEDS_N=3; [ "$MODE" = "quick" ] && SEEDS_N=1
 SEEDS=$SEEDS_N run "robot crews beat all 10 missions"  "$GODOT" --headless --path . --script tests/t_missions.gd
 SEEDS=$SEEDS_N run "robot crews fly dealt jobs (the Shift)" "$GODOT" --headless --path . --script tests/t_jobs.gd
 run "online dealer: budget, variety, robots"   "$GODOT" --headless --path . --script tests/t_deal.gd
+if command -v swift >/dev/null 2>&1; then
+  QRDIR="$LOG/qr"
+  run "QR codes read back by macOS's own reader"  bash -c "OUT='$QRDIR' '$GODOT' --headless --path . --script tests/t_qr.gd && swift tests/qr_decode.swift '$QRDIR'"
+fi
 run "IGOR's voice service"                      "$GODOT" --headless --path . --script tests/t_tts.gd
+run "practice: IGOR captains a lone crew member"  "$GODOT" --headless --path . --script tests/t_captain.gd
 run "a whole shift, and the glitch plumbing"  "$GODOT" --headless --path . --script tests/t_shift.gd
 [ -z "$NONET" ] && run "server: rooms, secrecy, limits, rubbish"  "$GODOT" --headless --path . --script tests/t_hub.gd
 run "UI smoke: every seat in a mission"     "$GODOT" --headless --path . scenes/main.tscn -- --solo --autotest=haven --warm=1 --wait=0.3 --tail=0.5
 run "UI smoke: poke every control"          "$GODOT" --headless --path . scenes/main.tscn -- --solo --autotest=haven --exercise --warm=1 --wait=0.3
 # layout QA needs a real window (headless has no viewport size); skip with NOWINDOW=1 on CI
 if [ -z "$NOWINDOW" ]; then
-  for RES in 1024x768 1280x720 1280x620 1920x1080; do
+  run "two thumbs at once; tap to explain"  "$GODOT" --path . --resolution 1600x720 scenes/main.tscn -- --touchtest --touchui
+  for RES in 1024x768 1280x720 1280x620 1920x1080 1200x540 800x900; do
     run "layout check: every screen @ $RES"  "$GODOT" --path . --resolution $RES scenes/main.tscn -- --layoutcheck
+  done
+  # phones: touch-sized buttons, landscape and upright, and nothing a finger presses under 44 px on the desks
+  for RES in 844x390 390x844; do
+    run "layout check (touch phone) @ $RES"  "$GODOT" --path . --resolution $RES scenes/main.tscn -- --layoutcheck --touchui
   done
 fi
 

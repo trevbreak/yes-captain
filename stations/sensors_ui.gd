@@ -1,7 +1,7 @@
 class_name SensorsUI
 extends Station
 ## Sensors: the radar. Click a blip, hold SCAN, and the captain finds out what it is.
-## Later: the comms dial (mission 5) and deep scans for weak spots (mission 6).
+## Later: the tractor beam (mission 2: click a pod or skip, hold PULL), the comms dial (5) and deep scans (6).
 
 var radar: Radar
 var scan_btn: BigButton
@@ -11,6 +11,9 @@ var comms_box: VBoxContainer
 var knob: Knob
 var sig_bar: Gauges.Bar
 var msg_lbl: Label
+var tr_box: VBoxContainer
+var tr_btn: BigButton
+var tr_lbl: Label
 var from_lbl: Label
 var _sel: int = -1
 var _blips: Array = []
@@ -41,10 +44,25 @@ func build() -> void:
 	sel_sub = UIK.para("Click a blip on the radar.", 18)
 	cv.add_child(sel_sub)
 	scan_btn = BigButton.new("SCAN", "green", true, 140)
-	scan_btn.key_hint = "Space"
+	keyed(scan_btn, KEY_SPACE)
 	scan_btn.held.connect(func(on: bool): send("scan", on))
 	col.add_child(UIK.center(scan_btn))
-	col.add_child(UIK.btn("Next blip", "cream", _cycle, "", 18))
+	var nb: Button = UIK.btn("Next blip", "cream", _cycle, "", 20)
+	nb.custom_minimum_size = Vector2(0, 64)
+	col.add_child(nb)
+	# the tractor beam: the same "pick it, hold the button" as scanning
+	tr_box = UIK.vbox(4)
+	col.add_child(tr_box)
+	var th: HBoxContainer = UIK.hbox(8)
+	tr_box.add_child(th)
+	tr_btn = BigButton.new("PULL", "purple", true, 74)
+	keyed(tr_btn, KEY_T)
+	tr_btn.held.connect(func(on: bool): send("tractor", on))
+	th.add_child(tr_btn)
+	tr_lbl = UIK.para("", 17)
+	tr_lbl.custom_minimum_size = Vector2(140, 0)
+	tr_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	th.add_child(tr_lbl)
 	comms_box = side_window("COMMS", "teal", "speaker")
 	comms_box.add_child(UIK.para("Turn the dial until the signal locks, then READ THE MESSAGE OUT LOUD.", 18))
 	var kr: HBoxContainer = UIK.hbox(8)
@@ -102,7 +120,7 @@ func refresh(v: Dictionary, _com: Dictionary) -> void:
 			b = x
 	if b.is_empty():
 		sel_card.text = "Nothing"
-		sel_sub.text = "Click a blip on the radar." if bool(v.get("ok", true)) else "Sensors are broken. Ask the Engineer!"
+		sel_sub.text = "Click a blip on the radar." if bool(v.get("ok", true)) else "Sensors are broken. Fix them on your ship plan!"
 	else:
 		sel_card.text = str(b.name) if bool(b.scanned) else "Unknown!"
 		var bits: String = "%dm away. " % int(b.dist)
@@ -117,6 +135,19 @@ func refresh(v: Dictionary, _com: Dictionary) -> void:
 		sel_sub.text = bits
 	scan_btn.set_progress(float(v.get("prog", 0.0)) if bool(v.get("scanning", false)) else -1.0)
 	scan_btn.set_disabled(not bool(v.get("ok", true)))
+	tr_box.visible = feat("tractor")
+	var tr: Dictionary = v.get("tractor", {})
+	if not tr.is_empty():
+		var d: float = float(tr.get("dist", -1.0))
+		if not bool(tr.get("ok", true)):
+			tr_lbl.text = "Tractor beam is BROKEN."
+		elif d < 0.0:
+			tr_lbl.text = "Nothing to grab."
+		elif d <= float(tr.get("range", 150.0)):
+			tr_lbl.text = "%s IN RANGE. Hold PULL!" % str(tr.nearest)
+		else:
+			tr_lbl.text = "%s: %dm. Get within %dm." % [str(tr.nearest), int(d), int(tr.get("range", 150.0))]
+		tr_btn.set_disabled(not bool(tr.get("ok", true)))
 	comms_box.get_parent().get_parent().visible = feat("comms")
 	var cm: Dictionary = v.get("comms", {})
 	if not knob._drag and not (held(KEY_Q) or held(KEY_E)):
@@ -138,7 +169,11 @@ func on_key(k: Key, down: bool) -> bool:
 		KEY_SPACE:
 			scan_btn.press_key(down)
 			return true
-		KEY_TAB, KEY_R:
+		KEY_T:
+			if feat("tractor"):
+				tr_btn.press_key(down)
+			return true
+		KEY_TAB:
 			if down:
 				_cycle()
 			return true
@@ -153,6 +188,7 @@ class Knob extends Control:
 	signal changed(v: float)
 	var value: float = 0.5
 	var _drag: bool = false
+	var _finger: int = Pointer.NONE
 	var _last: float = 0.0
 	var _tex: Texture2D
 
@@ -169,14 +205,23 @@ class Knob extends Control:
 				changed.emit(value)
 
 	func _gui_input(e: InputEvent) -> void:
-		if e is InputEventMouseButton and e.button_index == MOUSE_BUTTON_LEFT:
-			_drag = e.pressed
+		if Pointer.swallow(e):
+			accept_event()
+			return
+		var d: int = Pointer.down(e)
+		if d != Pointer.NONE and _finger == Pointer.NONE:
+			_finger = d
+			_drag = true
 			_last = (e.position - size / 2.0).angle()
 			accept_event()
-		elif e is InputEventMouseMotion and _drag:
+		elif Pointer.moved(e) != Pointer.NONE and Pointer.moved(e) == _finger:
 			var a: float = (e.position - size / 2.0).angle()
 			set_value(value + wrapf(a - _last, -PI, PI) / deg_to_rad(270.0), true)
 			_last = a
+			accept_event()
+		elif Pointer.up(e) != Pointer.NONE and Pointer.up(e) == _finger:
+			_finger = Pointer.NONE
+			_drag = false
 			accept_event()
 
 	func _draw() -> void:

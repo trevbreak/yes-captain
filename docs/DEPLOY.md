@@ -103,3 +103,10 @@ else. If the speech service is missing or fails, browsers fall back to the compu
 | `HTTPS_PORT` | The port https is reached on from outside the container (default 8443; 443 with a domain). |
 | `MAX_ROOMS` | Crew rooms that may be open at once (default 20). |
 | `TURN_URL`, `TURN_USER`, `TURN_PASS` | Optional voice relay. |
+
+## The job log
+
+Every job a human crew finishes adds one line of JSON to `jobs.log` in the container's data folder
+(`/data/godot/app_userdata/Yes, Captain/jobs.log`, so `/mnt/user/appdata/yes-captain/...` on Unraid): the task,
+place, snags, time against par, hull, pay, how many humans and whether hard mode was on. Robots-only jobs aren't
+logged. It's there for tuning the par times and pay from real crews.

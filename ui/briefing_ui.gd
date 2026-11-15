@@ -31,6 +31,7 @@ var _jobs_sig: String = ""
 var _type_t: float = 0.0
 var _page_t: float = 0.0
 var _spoken: int = -1
+var _crew: bool = false     # a crew phone: skip the story and plan (the Captain's screen tells the room those)
 var _auto: bool = true
 
 func _ready() -> void:
@@ -140,7 +141,9 @@ func _ready() -> void:
 
 func apply(pd: Dictionary, my_seats: Array) -> void:
 	var b: Dictionary = pd.get("brief", {})
-	var sig: String = "%s/%d" % [str(b.get("id", "")), int(b.get("num", 0))]
+	var crew: bool = not my_seats.is_empty() and not ("captain" in my_seats)
+	var sig: String = "%s/%d/%s" % [str(b.get("id", "")), int(b.get("num", 0)), str(crew)]
+	_crew = crew
 	if sig != _sig and not b.is_empty():
 		_sig = sig
 		_setup(b)
@@ -155,7 +158,7 @@ func apply(pd: Dictionary, my_seats: Array) -> void:
 	for r in pd.get("roster", []):
 		crew_row.add_child(_crew_tile(r))
 		if str(r.kind) == "human" and not bool(r.ready):
-			waiting.append(K.seat_name(str(r.seat)) if str(r.who) == "You" else str(r.who))
+			waiting.append(K.role_name(str(r.seat)) if str(r.who) == "You" else str(r.who))
 	ready_btn.set_pressed_no_signal(bool(pd.get("you_ready", false)))
 	ready_btn.text = "READY!" if ready_btn.button_pressed else "I'M READY"
 	launch_btn.visible = bool(pd.get("can_launch", false))
@@ -192,6 +195,9 @@ func _setup(b: Dictionary) -> void:
 		{"title": ("TODAY'S SNAGS" if is_job else "NEW TODAY: " + str(nw.get("title", "")).to_upper()), "who": "igor", "text": str(nw.get("text", "")),
 			"who_list": nw.get("who", []), "say": ("Today's snags. " if is_job else "New today. " + str(nw.get("title", "")) + ". ") + str(nw.get("text", ""))},
 	]
+	if _crew:
+		# phones in the crew: the story and the plan are the Captain's to read out; here, just what's new
+		pages = pages.slice(2)
 	var card: Dictionary = b.get("card", {})
 	if not card.is_empty():
 		# the card the crew earned last shift (or, the first time, what a Shift is)
@@ -233,6 +239,10 @@ func _goto(i: int, auto: bool) -> void:
 		var cell: VBoxContainer = UIK.vbox(0)
 		cell.add_child(UIK.portrait(str(st), 64))
 		cell.add_child(UIK.head(K.seat_name(str(st)).to_upper(), 14, K.seat_color(str(st)).darkened(0.2), HORIZONTAL_ALIGNMENT_CENTER))
+		# which player that is: the station's half of a crew role
+		var r: String = K.role_of(str(st))
+		if r != "" and r != "captain" and r != str(st):
+			cell.add_child(UIK.label("the %s" % K.role_name(r), 14, K.pal("ink_soft"), HORIZONTAL_ALIGNMENT_CENTER))
 		new_who.add_child(cell)
 	for d in dots.get_children():
 		d.queue_free()
@@ -241,7 +251,9 @@ func _goto(i: int, auto: bool) -> void:
 	prev_btn.disabled = page == 0
 	next_btn.disabled = page >= pages.size() - 1
 	_spoken = page
-	UIK.speak(str(p.get("say", p.text)))
+	# in one room the Captain's screen does the talking; a crew phone only speaks when the crew is apart
+	if not _crew or bool(Net.last_lobby.get("voice", false)):
+		UIK.speak(str(p.get("say", p.text)))
 
 func _process(dt: float) -> void:
 	if not visible or pages.is_empty():
@@ -266,11 +278,26 @@ func _build_jobs(seats: Array) -> void:
 	var nw: Array = brief.get("new", {}).get("who", [])
 	if seats.is_empty():
 		jobs.add_child(UIK.para("You're watching this one. Pick a seat in the Crew Room next time!", 21))
+	elif K.combined(seats):
+		# a crew role: who you are, then its two stations' jobs
+		var rid: String = K.role_of(str(seats[0]))
+		var hr0: HBoxContainer = UIK.hbox(8)
+		jobs.add_child(hr0)
+		hr0.add_child(UIK.portrait(K.role_face(rid), 76))
+		var hv: VBoxContainer = UIK.vbox(0)
+		hv.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		hr0.add_child(hv)
+		hv.add_child(UIK.head("YOU'RE THE %s" % K.role_name(rid).to_upper(), 24, UIK.c(K.role_color(rid)).darkened(0.25)))
+		hv.add_child(UIK.label(K.role_persona(rid), 18, K.pal("ink_soft")))
 	for s in seats:
 		var row: HBoxContainer = UIK.hbox(8)
 		jobs.add_child(row)
-		var pr: TextureRect = UIK.portrait(str(s), 76)
+		var role_row: bool = K.combined(seats)
+		# a role's two jobs show the station's icon; the role's character was shown once above
+		var pr: Control = UIK.icon(str(K.SEAT_INFO[s].icon), 40, K.seat_color(str(s)).darkened(0.2)) if role_row else UIK.portrait(str(s), 76)
 		pr.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+		if role_row:
+			pr.custom_minimum_size = Vector2(76, 40)
 		row.add_child(pr)
 		var v: VBoxContainer = UIK.vbox(2)
 		v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -280,13 +307,14 @@ func _build_jobs(seats: Array) -> void:
 		hr.add_child(UIK.head(K.seat_name(str(s)).to_upper(), 22, K.seat_color(str(s)).darkened(0.2)))
 		if str(s) in nw:
 			hr.add_child(UIK.chip("NEW!", "red", "star", 15))
-		v.add_child(UIK.label(K.persona(str(s)), 18, K.pal("ink_soft")))
+		if not role_row:
+			v.add_child(UIK.label(K.persona(str(s)), 18, K.pal("ink_soft")))
 		v.add_child(UIK.para(str(K.SEAT_INFO[s].job), 20))
 
 func _crew_tile(r: Dictionary) -> Control:
 	var v: VBoxContainer = UIK.vbox(-2)
 	v.custom_minimum_size = Vector2(88, 0)
-	var pr: TextureRect = UIK.portrait(str(r.seat), 46)
+	var pr: TextureRect = UIK.portrait(K.role_face(str(r.seat)), 46)
 	pr.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	if str(r.kind) == "empty":
 		pr.modulate = Color(1, 1, 1, 0.35)

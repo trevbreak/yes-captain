@@ -111,22 +111,15 @@ func _process(delta: float) -> bool:
 		3:
 			if t > 1.0:
 				check(str(last("C", "joined").get("code", "")) == code_a, "joining by code works (any case)")
-				nets["C"].send("claim", {"seats": ["helm", "engines"]})
-				nets["C"].send("claim", {"seats": ["weapons", "captain"]})   # captain is taken: must take neither
+				nets["C"].send("claim", {"seat": "engines"})                  # one station of a role: the whole role comes with it
+				nets["C"].send("claim", {"seats": ["tech", "captain"]})        # captain is taken: must take neither
 				step = 4
 				t = 0.0
 		4:
 			if t > 0.6:
 				var h: GameHost = hub().rooms[code_a].host
-				check(h.peers[nets["C"].my_id].seats == ["helm", "engines"], "a pair is taken whole, or not at all: %s" % str(h.peers[nets["C"].my_id].seats))
-				nets["A"].send("start")   # C isn't ready: must be refused
-				step = 41
-				t = 0.0
-		41:
-			if t > 0.6:
-				var h3: GameHost = hub().rooms[code_a].host
-				check(h3.phase == "lobby" and not last("A", "toast").is_empty(), "the host can't start until the crew is ready")
-				nets["C"].send("lobby_ready", {"on": true})
+				check(h.peers[nets["C"].my_id].seats == ["engines", "weapons"], "a role is taken whole, or not at all: %s" % str(h.peers[nets["C"].my_id].seats))
+				check(int(h.seat_owner.get("captain", 0)) == nets["A"].my_id, "the room's creator sits in the Captain's chair")
 				step = 5
 				t = 0.0
 		5:
@@ -153,8 +146,8 @@ func _process(delta: float) -> bool:
 				check(hub().rooms[code_a].host.phase == "mission" and hub().rooms[code_b].host.phase == "board", "two rooms run side by side (A flying, B at its job board)")
 				check((hub().rooms[code_b].host.shift.get("offers", []) as Array).size() == 3, "a brand-new crew gets three jobs on the board")
 				check(count("A", "rtc") == 0 and count("C", "rtc") == 0, "voice handshakes can't cross rooms or run with voice off")
-				nets["C"].send("active", {"seat": "helm"})
-				nets["C"].intent("helm", "wheel", 0.5)
+				nets["C"].send("active", {"seat": "engines"})
+				nets["C"].intent("engines", "throttle", 0.5)
 				# rubbish: none of this may hurt the server
 				nets["C"].send("intent", {"station": ["helm"], "key": {"a": {"b": {"c": {"d": 1}}}}, "val": "x".repeat(30000)})
 				nets["C"].send("kick", {"peer": "everyone"})
@@ -168,18 +161,76 @@ func _process(delta: float) -> bool:
 		8:
 			if t > 1.5:
 				var h2: GameHost = hub().rooms[code_a].host
-				check(absf(h2.world.ship.wheel - 0.5) < 0.01, "the pilot's wheel reached the ship")
+				check(absf(h2.world.ship.throttle - 0.5) < 0.01, "the Stoker's throttle reached the ship")
 				var sc: Dictionary = snaps["C"][snaps["C"].size() - 1]
 				var leak: bool = false
-				for banned in ["ents", "blips", "warnings", "steps", "goal", "board", "crew"]:
-					if (sc.get("view", {}) as Dictionary).has(banned):
-						leak = true
-				check(str(sc.get("active", "")) == "helm" and not leak, "the helm's screen data holds no map, contacts or goals")
+				var shown: Array = [sc.get("view", {})]
+				shown.append_array((sc.get("views", {}) as Dictionary).values())
+				for v in shown:
+					for banned in ["ents", "blips", "warnings", "steps", "goal", "board", "crew"]:
+						if (v as Dictionary).has(banned):
+							leak = true
+				check(str(sc.get("active", "")) == "engines" and (sc.get("views", {}) as Dictionary).size() == 2 and not leak,
+					"the Stoker gets both its screens, and neither holds the map, contacts or goals")
 				var sa: Dictionary = snaps["A"][snaps["A"].size() - 1]
 				check((sa.get("view", {}) as Dictionary).has("ents") and (sa.view as Dictionary).has("warnings"), "the captain gets the whole picture")
 				check(h2.career.unlocked() == 4 and h2.peers.has(nets["C"].my_id), "a crew member can't unlock missions or kick")
 				check(count("D", "rooms") < 300, "a flood of messages is throttled (%d answered)" % count("D", "rooms"))
-				nets["A"].send("kick", {"peer": nets["C"].my_id})
+				# ---- a phone whose connection died without the server noticing comes back on a new connection
+				var c2: Node = _mk("C2")
+				c2._token = nets["C"]._token
+				c2.want_room = code_a
+				c2.join("127.0.0.1", PORT, "Cat\n<b>")
+				step = 80
+				t = 0.0
+		80:
+			if t > 1.5:
+				var h3: GameHost = hub().rooms[code_a].host
+				var c2: Node = nets["C2"]
+				var old: int = nets["C"].my_id
+				check(h3.peers.has(c2.my_id) and h3.peers[c2.my_id].seats == ["engines", "weapons"] and str(h3.peers[c2.my_id].name) == "Catb",
+					"back on a new connection: same name, same Stoker seat (%s)" % str(h3.peers.get(c2.my_id, {}).get("seats", [])))
+				check(not h3.peers.has(old) and int(h3.seat_owner.get("engines", 0)) == c2.my_id, "the dead connection is retired, not left holding the seat")
+				nets["C"].shutdown()
+				nets["C"] = c2
+				ev["C"] = ev["C2"]
+				snaps["C"] = snaps["C2"]
+				# ---- now the server really drops it: the client should get itself back in, with no clicks
+				c2.set_meta("tries", 0)
+				c2.set_meta("lost", false)
+				c2.reconnecting.connect(func(_n: int, _w: float): c2.set_meta("tries", int(c2.get_meta("tries")) + 1))
+				c2.disconnected.connect(func(_r: String): c2.set_meta("lost", true))
+				nets["S"].peer.disconnect_peer(c2.my_id)
+				step = 81
+				t = 0.0
+		81:
+			if t > 4.0:
+				var h4: GameHost = hub().rooms[code_a].host
+				var c3: Node = nets["C"]
+				check(int(c3.get_meta("tries")) >= 1 and not bool(c3.get_meta("lost")), "a dropped client retries by itself (%d tries) and never gives up early" % int(c3.get_meta("tries")))
+				check(c3.room_code == code_a and h4.peers.has(c3.my_id) and h4.peers[c3.my_id].seats == ["engines", "weapons"] and not c3.reconnecting_now(),
+					"...and lands back in its room and seat (room '%s')" % c3.room_code)
+				check(h4.phase == "mission" and int(h4.seat_owner.get("weapons", 0)) == c3.my_id, "the mission carried on, and the Stoker is human again")
+				# ---- someone arrives mid-mission, watches, then takes over a robot's role
+				nets["D"].send("join", {"code": code_a})
+				step = 815
+				t = 0.0
+		815:
+			if t > 0.8:
+				var h6: GameHost = hub().rooms[code_a].host
+				check(h6.bots.has("sensors") and h6.peers.has(nets["D"].my_id) and (h6.peers[nets["D"].my_id].seats as Array).is_empty(), "Dee arrives mid-mission and watches; a robot is the Tech")
+				nets["D"].send("claim", {"seat": "tech"})
+				step = 82
+				t = 0.0
+		82:
+			if t > 0.8:
+				var h5: GameHost = hub().rooms[code_a].host
+				var c3: Node = nets["C"]
+				check(h5.phase == "mission" and h5.peers[nets["D"].my_id].seats == ["sensors", "engineer"] and not h5.bots.has("sensors") and not h5.bots.has("engineer"),
+					"a watcher takes over the Tech from the robot mid-mission (%s)" % str(h5.peers[nets["D"].my_id].seats))
+				var toast: Dictionary = last("A", "toast")
+				check(str(toast.get("text", "")).contains("takes over the Tech"), "...and everyone is told ('%s')" % str(toast.get("text", "")))
+				nets["A"].send("kick", {"peer": c3.my_id})
 				nets["B"].send("leave")
 				step = 9
 				t = 0.0
@@ -188,6 +239,7 @@ func _process(delta: float) -> bool:
 				check(not last("C", "kicked").is_empty() and not hub().peer_room.has(nets["C"].my_id), "the host can send someone home")
 				check(not hub().rooms.has(code_b), "an empty room closes")
 				check(hub().rooms.has(code_a) and hub().rooms[code_a].host.bots.has("helm"), "a robot took the empty helm")
+				nets["D"].send("leave")
 				nets["A"].shutdown()
 				step = 10
 				t = 0.0

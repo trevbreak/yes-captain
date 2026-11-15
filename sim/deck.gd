@@ -75,10 +75,20 @@ const PARTS: Array = [
 	{"id": "fast_torps", "name": "Spring-Loaded Torpedoes", "good": "torpedoes load twice as fast", "bad": "gun heats up faster", "mods": {"torp_load": 2.0, "gun_heat": 1.3}, "needs": ["torpedo"]},
 ]
 
-static func features_for(_career: Progress) -> Dictionary:
+## the fiddly extras that only hard mode deals: the comms dial, and torpedoes with their weak spots
+const HARD_ONLY: Array = ["comms", "torpedo", "weakspot"]
+
+static func features_for(career: Progress) -> Dictionary:
 	## a crew on the Shift is assumed to have done basic training: every mechanic, every kind of job.
 	## (Training is where the mechanics are taught one at a time; the Shift doesn't hold any of them back.)
-	return Missions.features_upto(Missions.ORDER.size())
+	## Except the fiddly extras: those, and the breakneck pace, are for crews who turn on hard mode.
+	var f: Dictionary = Missions.features_upto(Missions.ORDER.size())
+	if career != null and career.hard:
+		f["hard"] = true
+	else:
+		for k in HARD_ONLY:
+			f.erase(k)
+	return f
 
 static func shift_open(career: Progress) -> bool:
 	return career.unlocked() >= SHIFT_UNLOCKS_AT

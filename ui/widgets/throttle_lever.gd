@@ -9,6 +9,7 @@ var disabled: bool = false
 var marks: Array = [[0.0, "STOP"], [0.5, "HALF"], [1.0, "FULL"]]
 var red_from: float = -1.0       # draw a red zone from here to FULL (heat mission)
 var _drag: bool = false
+var _finger: int = Pointer.NONE
 var _plate: Texture2D
 var _handle: Texture2D
 var _lay: Dictionary = {}
@@ -52,13 +53,21 @@ func _y_for(v: float) -> float:
 func _gui_input(e: InputEvent) -> void:
 	if disabled:
 		return
-	if e is InputEventMouseButton and e.button_index == MOUSE_BUTTON_LEFT:
-		_drag = e.pressed
-		if e.pressed:
-			_set_from(e.position.y)
+	if Pointer.swallow(e):
 		accept_event()
-	elif e is InputEventMouseMotion and _drag:
+		return
+	var d: int = Pointer.down(e)
+	if d != Pointer.NONE and _finger == Pointer.NONE:
+		_finger = d
+		_drag = true
 		_set_from(e.position.y)
+		accept_event()
+	elif Pointer.moved(e) != Pointer.NONE and Pointer.moved(e) == _finger:
+		_set_from(e.position.y)
+		accept_event()
+	elif Pointer.up(e) != Pointer.NONE and Pointer.up(e) == _finger:
+		_finger = Pointer.NONE
+		_drag = false
 		accept_event()
 
 func _set_from(y: float) -> void:
