@@ -25,7 +25,7 @@ func _ready() -> void:
 	get_window().title = "Yes, Captain!"
 	# a desktop window shouldn't shrink past usable; test runs may go phone-sized (--resolution 390x844)
 	# (never in a browser: there the "window" is the page, and a minimum wider than a phone pushes the game off-screen)
-	if not Web.on() and not (args.has("layoutcheck") or args.has("menushot") or args.has("touchtest")):
+	if not Web.on() and not (args.has("layoutcheck") or args.has("menushot") or args.has("touchtest") or args.has("phoneshots")):
 		get_window().min_size = Vector2i(1024, 600)
 	layer = CanvasLayer.new()
 	add_child(layer)
@@ -110,7 +110,7 @@ func _run_server() -> void:
 func _apply_args() -> void:
 	if args.has("targets"):
 		LayoutCheck.min_target = float(args.targets)
-	if args.has("autotest") or args.has("layoutcheck") or args.has("tour") or args.has("readmeshots") or args.has("shiftshots") or args.has("captainshots") or args.has("pairshots") or args.has("touchtest"):
+	if args.has("autotest") or args.has("layoutcheck") or args.has("tour") or args.has("readmeshots") or args.has("shiftshots") or args.has("captainshots") or args.has("pairshots") or args.has("touchtest") or args.has("phoneshots"):
 		Progress.persist = false
 		Progress.forget_local()
 		Progress.local().unlock_all()
@@ -160,6 +160,10 @@ func _apply_args() -> void:
 		_captainshots.call_deferred()
 	elif args.has("menushot"):
 		_menushot.call_deferred()
+	elif args.has("phoneshots"):
+		args["shots"] = args.phoneshots
+		get_window().always_on_top = true
+		_phoneshots.call_deferred()
 	elif args.has("readmeshots"):
 		args["shots"] = args.readmeshots
 		get_window().always_on_top = true
@@ -447,72 +451,119 @@ func _captainshots() -> void:
 	get_tree().quit(0)
 
 func _readmeshots() -> void:
-	## the screenshots in docs/screenshots, taken in good-looking states
+	## every picture in the README, in good-looking states (1280x720). Phone pictures: --phoneshots.
 	await _wait(1.0)
 	await _shot("01_title")
-	_on_solo("Captain")
-	await _wait(0.4)
-	for s in ["captain", "helm", "engines"]:
-		Net.send("claim", {"seat": s})
-	Net.send("opt", {"key": "mission", "val": "bigone"})
-	await _wait(0.6)
-	await _shot("02_crew_room")
-	await _start_mission("bigone", K.SEATS, true)
+	_fake_depot()
 	await _wait(0.8)
-	var b: BriefingUI = game.briefing_ui
-	b._goto(2, false)
+	await _shot("02_depot")
+	_on_solo("Trev")
+	await _wait(0.4)
+	_unlock_everything()
+	# a crew room as it looks on a server: a name, a code and the QR code to scan
+	Net.host.room_name = "The Bin Lids"
+	Net.host.room_code = "BEGA"
+	Net.send("release_all")
+	Net.send("claim", {"seat": "captain"})
+	Net.send("opt", {"key": "mode", "val": "shift"})
+	await _wait(0.8)
+	await _shot("03_crew_room")
+	Net.host.room_code = ""
+	Net.host.room_name = ""
+	Net.host.autopilot = true
+	Net.send("start")
+	await _wait(0.8)
+	Net.send("vote", {"i": 1})
+	await _wait(0.4)
+	await _shot("04_job_board")
+	# the Stoker's short briefing: what's new, and their two jobs
+	Net.send("release_all")
+	Net.send("claim", {"seat": "stoker"})
+	await _wait(0.3)
+	Net.send("pick", {"i": 1})
+	await _wait(1.0)
 	UIK.stop_speech()
-	await _wait(0.2)
-	b.page_text.visible_ratio = 1.0
-	await _shot("03_briefing")
+	await _wait(0.3)
+	game.briefing_ui.page_text.visible_ratio = 1.0
+	await _shot("05_briefing")
 	await _launch()
-	await _wait(7.0)
-	Net.send("active", {"seat": "captain"})
-	# wait for a moment when the captain has something to shout about
+	await _wait(6.0)
+	Net.host.autopilot = true
+	Net.host._sync_bots()
+	# the Captain's bridge, at a moment with something to shout about
+	Net.send("release_all")
+	Net.send("claim", {"seat": "captain"})
 	var t0: int = Time.get_ticks_msec()
 	while Time.get_ticks_msec() - t0 < 8000:
 		var warns: Array = Snapshots.forecasts(Net.host.world)
-		if not warns.is_empty() and int(warns[0].level) >= 3:
+		if not warns.is_empty() and int(warns[0].level) >= 2:
 			break
 		await _wait(0.1)
-	await _wait(0.5)
-	await _shot("04_captain")
-	Net.send("active", {"seat": "weapons"})
-	await _wait(0.8)
-	await _shot("05_weapons")
-	Net.send("active", {"seat": "sensors"})
-	await _wait(0.8)
-	await _shot("06_sensors")
-	await _play("lesson", 4.0)
-	Net.send("active", {"seat": "helm"})
-	await _wait(0.8)
-	await _shot("07_helm")
-	await _play("hot", 9.0)
-	Net.send("active", {"seat": "engines"})
-	await _wait(0.8)
-	await _shot("08_engines")
-	await _play("pet", 12.0)
-	Net.send("active", {"seat": "shields"})
-	await _wait(0.8)
-	await _shot("09_shields")
-	await _play("brownout", 5.0)
-	Net.host.autopilot = false
-	Net.host._sync_bots()
+	await _wait(0.6)
+	await _shot("06_captain")
+	# the three crew desks
+	for rid in ["driver", "stoker", "tech"]:
+		Net.send("release_all")
+		Net.send("claim", {"seat": rid})
+		await _wait(1.6)
+		await _shot("07_%s" % rid)
+	# glitches: the Tech reads IGOR's manual; the chart turns upside down
 	var w: World = Net.host.world
-	w.break_system("engine_s", "test", true)
-	w.break_system("gun", "test", false)
-	w.ship.sys.shield.hp = 45.0
-	Net.send("active", {"seat": "engineer"})
-	await _wait(0.4)
-	Net.intent("engineer", "select", "engine_s")
-	Net.intent("engineer", "repair", true)
-	await _wait(1.0)
-	await _shot("10_engineer")
-	Net.intent("engineer", "repair", false)
+	w.add_glitch("backwards_wheel")
+	w.add_glitch("upside_chart")
+	Net.intent("engineer", "select", "bridge")
+	await _wait(1.2)
+	await _shot("08_glitch_manual")
+	Net.send("release_all")
+	Net.send("claim", {"seat": "captain"})
+	await _wait(1.6)
+	await _shot("09_upside_down_chart")
 	Net.host.mission.done = true
-	await _wait(1.0)
-	await _shot("11_debrief")
+	await _wait(1.2)
+	await _shot("10_pay_slip")
+	# the rest of the shift, to the end
+	for k in 2:
+		Net.send("next")
+		await _wait(0.6)
+		if k == 0 and not (Net.host.shift.get("part_offers", []) as Array).is_empty():
+			Net.send("part", {"id": str(Net.host.shift.part_offers[0].id)})
+		Net.send("pick", {"i": 0})
+		await _wait(0.5)
+		await _launch()
+		await _wait(0.8)
+		Net.host.mission.done = true
+		await _wait(1.2)
+	await _shot("11_shift_end")
 	print("README SHOTS DONE")
+	get_tree().quit(0)
+
+func _phoneshots() -> void:
+	## the phone pictures: upright title and Crew Room, then the Stoker's desk held sideways (run at 390x844 --touchui)
+	await _wait(1.0)
+	await _shot("12_phone_title")
+	_on_solo("Sam")
+	await _wait(0.4)
+	_unlock_everything()
+	Net.host.room_name = "The Bin Lids"
+	Net.host.room_code = "BEGA"
+	Net.send("opt", {"key": "mode", "val": "shift"})
+	await _wait(0.8)
+	await _shot("13_phone_crew_room")
+	Net.host.room_code = ""
+	Net.host.autopilot = true
+	Net.send("release_all")
+	Net.send("claim", {"seat": "stoker"})
+	Net.send("opt", {"key": "mode", "val": "career"})
+	Net.send("opt", {"key": "mission", "val": "haven"})
+	await _wait(0.3)
+	Net.send("start")
+	await _wait(0.6)
+	await _shot("14_phone_turn_sideways")
+	get_window().size = Vector2i(844, 390)
+	await _launch()
+	await _wait(6.0)
+	await _shot("15_phone_stoker")
+	print("PHONE SHOTS DONE")
 	get_tree().quit(0)
 
 func _launch() -> void:
@@ -958,9 +1009,9 @@ func _fake_depot() -> void:
 	## the Depot only exists on a server: show it with made-up crews so it can be checked and photographed
 	_show("sessions")
 	sessions.update_rooms({"you": "Tester", "full": false, "rooms": [
-		{"code": "PUDD", "name": "The Bin Lids", "host": "Maggie", "players": 3, "max": 7, "doing": "In the crew room", "phase": "lobby", "open": ["weapons", "sensors", "shields", "engineer"]},
-		{"code": "SKIP", "name": "Wobble's crew", "host": "Wobble", "players": 5, "max": 7, "doing": "Flying: Hot Soup Run", "phase": "mission", "open": ["engineer", "sensors"]},
-		{"code": "ZOGA", "name": "Loud Friends United", "host": "Captain Biscuit", "players": 7, "max": 7, "doing": "Briefing: The Big One", "phase": "briefing", "open": []}]})
+		{"code": "PUDD", "name": "The Bin Lids", "host": "Maggie", "players": 2, "max": 4, "doing": "In the crew room", "phase": "lobby", "open": ["stoker", "tech"]},
+		{"code": "SKIP", "name": "Wobble's crew", "host": "Wobble", "players": 3, "max": 4, "doing": "Flying: Hot Soup Run", "phase": "mission", "open": ["tech"]},
+		{"code": "ZOGA", "name": "Loud Friends United", "host": "Captain Biscuit", "players": 4, "max": 4, "doing": "Briefing: The Big One", "phase": "briefing", "open": []}]})
 
 func _shift_to_board() -> void:
 	if Net.host.phase != "lobby":

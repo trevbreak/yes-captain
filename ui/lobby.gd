@@ -204,7 +204,7 @@ func _update_join(code: String) -> void:
 	var url: String = Web.invite_link(code) if code != "" else ""
 	join_box.visible = code != "" or _addr != ""
 	if code != "":
-		join_url_lbl.text = Web.site_name()
+		join_url_lbl.text = Web.site_name() if Web.site_name() != "" else "this server's address"
 		join_code_lbl.text = code
 		join_how.text = "SCAN TO JOIN, OR GO TO"
 		qr_pic.visible = true
