@@ -11,6 +11,30 @@ const HEAD: int = 26
 
 static var _fonts: Dictionary = {}
 static var _theme: Theme = null
+## what the player last used: "touch", "mouse" or "key". Key hints ("[SPACE]") only show for "key".
+static var last_input: String = ""
+## a touch screen: every button gets at least TOUCH_MIN tall (about 44 px on a phone, Apple's guideline)
+static var touch_ui: bool = false
+const TOUCH_MIN: float = 82.0
+
+static func note_input(e: InputEvent) -> bool:
+	## call with every input event; true when the kind of input just changed (time to redraw the hints)
+	var kind: String = ""
+	if e is InputEventScreenTouch or e is InputEventScreenDrag:
+		kind = "touch"
+	elif e is InputEventKey and (e as InputEventKey).pressed:
+		kind = "key"
+	elif (e is InputEventMouseButton or e is InputEventMouseMotion) and e.device != InputEvent.DEVICE_ID_EMULATION:
+		kind = "mouse"
+		if e is InputEventMouseMotion and last_input == "key":
+			return false   # a nudged mouse doesn't hide the keys you're using
+	if kind == "" or kind == last_input:
+		return false
+	last_input = kind
+	return true
+
+static func keys_shown() -> bool:
+	return last_input == "key"
 
 # ---------------------------------------------------------------- colour + fonts
 
@@ -53,13 +77,27 @@ static func speak(text: String) -> void:
 		s.call("speak", text)
 
 static func stop_speech() -> void:
-	if DisplayServer.get_name() != "headless" and DisplayServer.has_feature(DisplayServer.FEATURE_TEXT_TO_SPEECH):
-		DisplayServer.tts_stop()
+	var s: Node = _sfx_node()
+	if s != null:
+		s.call("stop_speech")
 
 static func speaking() -> bool:
-	if DisplayServer.get_name() == "headless" or not DisplayServer.has_feature(DisplayServer.FEATURE_TEXT_TO_SPEECH):
-		return false
-	return DisplayServer.tts_is_speaking()
+	var s: Node = _sfx_node()
+	return s != null and bool(s.call("is_speaking"))
+
+static func music(mood: String) -> void:
+	var s: Node = _sfx_node()
+	if s != null:
+		s.call("music", mood)
+
+static func set_music(on: bool) -> void:
+	var s: Node = _sfx_node()
+	if s != null:
+		s.call("set_music", on)
+
+static func music_on() -> bool:
+	var s: Node = _sfx_node()
+	return s != null and bool(s.get("music_on"))
 
 static func sound_on() -> bool:
 	var s: Node = _sfx_node()
@@ -69,6 +107,7 @@ static func set_sound(on: bool) -> void:
 	var s: Node = _sfx_node()
 	if s != null:
 		s.set("enabled", on)
+		s.call("_apply_music")
 
 static func voice_on() -> bool:
 	var s: Node = _sfx_node()
@@ -154,8 +193,10 @@ static func label(text: String, size: int = BODY, col: Color = Color(0, 0, 0, 0)
 	return l
 
 static func head(text: String, size: int = HEAD, col: Color = Color(0, 0, 0, 0), align: int = 0) -> Label:
+	## Luckiest Guy only looks right in capitals, so headings are always upper case
 	var l: Label = label(text, size, col, align)
 	l.add_theme_font_override("font", font("head"))
+	l.uppercase = true
 	return l
 
 static func title(text: String, size: int = 56, col: Color = Color(0, 0, 0, 0), align: int = 0) -> Label:
@@ -197,7 +238,7 @@ static func style_btn(b: Button, col: String) -> void:
 
 static func btn(text: String, col: String = "cream", cb: Callable = Callable(), icon_name: String = "", size: int = 22) -> Button:
 	var b: Button = Button.new()
-	b.text = text
+	b.text = text.to_upper()
 	b.focus_mode = Control.FOCUS_NONE
 	b.add_theme_font_override("font", font("head"))
 	b.add_theme_font_size_override("font_size", size)
@@ -210,6 +251,13 @@ static func btn(text: String, col: String = "cream", cb: Callable = Callable(), 
 	if cb.is_valid():
 		b.pressed.connect(cb)
 	b.button_down.connect(func(): UIK.sfx("click"))
+	if touch_ui:
+		# after the caller has set its own size: never shorter than a fingertip
+		b.ready.connect(func():
+			if b.has_meta("no_touch_min"):
+				return
+			var w: float = TOUCH_MIN if b.text == "" else TOUCH_MIN * 0.75     # an icon-only button is square
+			b.custom_minimum_size = Vector2(maxf(b.custom_minimum_size.x, w), maxf(b.custom_minimum_size.y, TOUCH_MIN)), CONNECT_ONE_SHOT)
 	return b
 
 static func toggle(text: String, col: String, cb: Callable, icon_name: String = "", size: int = 22) -> Button:
@@ -361,8 +409,8 @@ static func pic(name: String, px: Vector2) -> TextureRect:
 	r.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return r
 
-static func portrait(name: String, px: int = 96) -> TextureRect:
-	return pic("portrait_" + name, Vector2(px, px))
+static func portrait(name: String, px: int = 96) -> Face:
+	return Face.new(name, px)
 
 static func speech(text: String, who_portrait: String, who: String = "", px: int = 96, size: int = 24) -> HBoxContainer:
 	## a character with a speech bubble
@@ -389,3 +437,36 @@ static func bg(parent: Control) -> Paper:
 	parent.add_child(p)
 	parent.move_child(p, 0)
 	return p
+
+static func confirm(host: Control, title: String, text: String, yes: String, on_yes: Callable) -> Control:
+	## "are you sure?" over the whole screen: the risky choice in red, staying put in green (and the default)
+	var o: Control = Control.new()
+	o.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	o.set_meta("overlay", true)
+	o.z_index = 60
+	var dim: ColorRect = ColorRect.new()
+	dim.color = Color(0.1, 0.07, 0.05, 0.55)
+	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	o.add_child(dim)
+	var cc: CenterContainer = CenterContainer.new()
+	cc.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	o.add_child(cc)
+	var w: Array = window(title, "red", "back")
+	(w[0] as Control).custom_minimum_size = Vector2(460, 0)
+	cc.add_child(w[0])
+	var b: VBoxContainer = w[1]
+	b.add_child(para(text, 21))
+	var r: HBoxContainer = hbox(10)
+	b.add_child(r)
+	var stay: Button = btn("Stay", "green", func(): o.queue_free(), "check", 22)
+	stay.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	stay.custom_minimum_size = Vector2(0, 56)
+	r.add_child(stay)
+	var go: Button = btn(yes, "red", func():
+		o.queue_free()
+		on_yes.call(), "back", 22)
+	go.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	go.custom_minimum_size = Vector2(0, 56)
+	r.add_child(go)
+	host.add_child(o)
+	return o

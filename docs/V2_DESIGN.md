@@ -25,7 +25,7 @@ IGOR in the briefing.
 | Shields | Nana Fluffington (turtle) | Shield dial: point it at the danger | Tractor beam (M2), Pudding (M4) |
 | Engineer | Gus Spanner (raccoon) | Ship cutaway: click a broken part, hold REPAIR | Power routing + overload (M8) |
 
-Players can hold several seats and switch with 1-7. Robots fill empty seats.
+Since 2026-11-15 the game is four players: the Captain plus Driver (Helm + Shields), Stoker (Engines + Weapons) and Tech (Sensors + Engineer), each role on one screen. Robots fill empty roles.
 
 ## 3. The career: one new thing per mission
 

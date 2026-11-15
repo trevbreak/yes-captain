@@ -2,8 +2,13 @@ class_name Intents
 extends RefCounted
 ## Every control in the game, per station. Controls that a mission hasn't taught yet are ignored.
 
-static func apply(w: World, station: String, key: String, val: Variant) -> void:
+static func apply(w: World, station: String, key: String, val: Variant, raw: bool = false) -> void:
+	## raw = true skips the glitches (robots are not fooled by a backwards wheel; they are IGOR's relatives)
 	var s: Ship = w.ship
+	if not _valid(key, val):
+		return
+	if not raw:
+		val = Glitches.bend_intent(w, station, key, val)
 	match station:
 		"helm":
 			match key:
@@ -20,6 +25,11 @@ static func apply(w: World, station: String, key: String, val: Variant) -> void:
 					s.throttle = clampf(float(val), 0.0, 1.0)
 				"boost":
 					s.boost = bool(val) and w.feat("boost")
+				"power":
+					if w.feat("power") and val is Dictionary:
+						var g: String = str(val.get("group", ""))
+						if s.power.has(g):
+							s.power[g] = clampi(int(val.get("bars", 2)), 0, 3)
 		"weapons":
 			match key:
 				"aim":
@@ -45,15 +55,16 @@ static func apply(w: World, station: String, key: String, val: Variant) -> void:
 						w.scan_prog = 0.0
 				"scan":
 					w.scanning = bool(val)
+				"tractor":
+					s.tractor_on = bool(val) and w.feat("tractor")
 				"freq":
 					if w.feat("comms"):
 						w.comms_freq = clampf(float(val), 0.0, 1.0)
+					w.freq_touched = true
 		"shields":
 			match key:
 				"dir":
 					s.shield_dir = K.wrap_pi(float(val))
-				"tractor":
-					s.tractor_on = bool(val) and w.feat("tractor")
 				"pet":
 					s.petting = bool(val) and w.feat("pudding") and not s.pud_out
 				"snack":
@@ -72,8 +83,15 @@ static func apply(w: World, station: String, key: String, val: Variant) -> void:
 						s.repair_prog = 0.0
 				"repair":
 					s.repairing = bool(val)
-				"power":
-					if w.feat("power") and val is Dictionary:
-						var g: String = str(val.get("group", ""))
-						if s.power.has(g):
-							s.power[g] = clampi(int(val.get("bars", 2)), 0, 3)
+
+const NUMERIC: Array = ["wheel", "throttle", "aim", "freq", "dir"]
+
+static func _valid(key: String, val: Variant) -> bool:
+	## players' messages can hold anything: numbers where numbers belong, or the control is ignored
+	if key in NUMERIC:
+		return (val is float or val is int) and is_finite(float(val))
+	if key == "select":
+		return val is float or val is int or val is String
+	if key == "power":
+		return val is Dictionary
+	return val is bool or val is float or val is int

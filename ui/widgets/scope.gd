@@ -70,15 +70,35 @@ func _draw() -> void:
 		draw_string_outline(f, pos + Vector2(-16, sz.y / 2.0 + 18), d, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, 5, UIK.ink())
 		draw_string(f, pos + Vector2(-16, sz.y / 2.0 + 18), d, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, UIK.c("cream"))
 		if bool(it.get("weak", false)):
-			draw_string_outline(f, pos + Vector2(-48, -sz.y / 2.0 - 6), "WEAK SPOT: BACK", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, 5, UIK.ink())
-			draw_string(f, pos + Vector2(-48, -sz.y / 2.0 - 6), "WEAK SPOT: BACK", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, UIK.c("yellow"))
-	# bullets flying away from us / at us
+			# keep the words inside the glass, however big the ship looms
+			var wy: float = maxf(pos.y - sz.y / 2.0 - 6.0, c.y - inner * 0.62)
+			draw_string_outline(f, Vector2(pos.x - 62.0, wy), "WEAK SPOT: BACK", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, 5, UIK.ink())
+			draw_string(f, Vector2(pos.x - 62.0, wy), "WEAK SPOT: BACK", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, UIK.c("yellow"))
+		if it.has("lead"):
+			# Sensors scanned it: a diamond shows where to put the crosshair to hit it
+			var lx: float = clampf(float(it.lead) / cone, -1.1, 1.1)
+			var lp: Vector2 = Vector2(c.x + lx * inner * 0.92, pos.y)
+			if lp.distance_to(c) < inner - 8.0:
+				var dsz: float = 11.0
+				var dia: PackedVector2Array = PackedVector2Array([lp + Vector2(0, -dsz), lp + Vector2(dsz, 0), lp + Vector2(0, dsz), lp + Vector2(-dsz, 0), lp + Vector2(0, -dsz)])
+				draw_polyline(dia, UIK.ink(), 6.0, true)
+				draw_polyline(dia, UIK.c("yellow"), 3.0, true)
+	# shots flying away from us (laser bolts streaking off into the distance) and at us (blobs)
+	var muzzle: Vector2 = c + Vector2(0, inner * 0.85)
 	for b in view.get("bullets", []):
 		var x3: float = float(b.rel) / cone
 		var near2: float = 1.0 - clampf(float(b.dist) / rng_max, 0.0, 1.0)
 		var bp: Vector2 = c + Vector2(x3 * inner * 0.92, (0.25 - near2 * 0.45) * inner + near2 * inner * 0.6)
-		if bp.distance_to(c) < inner:
-			var bc: Color = UIK.c("yellow") if b.from == "us" else UIK.c("red")
+		if bp.distance_to(c) >= inner:
+			continue
+		if b.from == "us" and str(b.get("kind", "")) != "torpedo":
+			var tail: Vector2 = bp.lerp(muzzle, 0.12 + near2 * 0.3)
+			var wd: float = 2.0 + near2 * 6.0
+			draw_line(tail, bp, Color(UIK.c("teal").lightened(0.3), 0.45), wd * 2.4, true)
+			draw_line(tail, bp, UIK.c("teal").lightened(0.45), wd, true)
+			draw_line(tail.lerp(bp, 0.35), bp, UIK.c("white"), maxf(1.5, wd * 0.4), true)
+		else:
+			var bc: Color = UIK.c("mustard") if b.from == "us" else UIK.c("red")
 			draw_circle(bp, 3.0 + near2 * 9.0, UIK.ink())
 			draw_circle(bp, 1.5 + near2 * 7.0, bc)
 	# crosshair
@@ -89,9 +109,19 @@ func _draw() -> void:
 	draw_line(c + Vector2(0, -inner), c + Vector2(0, -inner * 0.24), ch, 2.5, true)
 	draw_line(c + Vector2(0, inner * 0.24), c + Vector2(0, inner), ch, 2.5, true)
 	if firing and gun_ok and int(Time.get_ticks_msec() / 70) % 2 == 0:
-		draw_circle(c + Vector2(0, inner * 0.7), 26.0, Color(UIK.c("yellow"), 0.7))
+		# the emitter glows at the bottom of the glass while the laser's going
+		draw_circle(muzzle, 24.0, Color(UIK.c("teal").lightened(0.3), 0.45))
+		draw_circle(muzzle, 12.0, Color(UIK.c("white"), 0.8))
 	if not gun_ok:
 		var f2: Font = UIK.font("head")
 		draw_string_outline(f2, c + Vector2(-92, -inner * 0.3), "GUN BROKEN", HORIZONTAL_ALIGNMENT_LEFT, -1, 30, 8, UIK.ink())
 		draw_string(f2, c + Vector2(-92, -inner * 0.3), "GUN BROKEN", HORIZONTAL_ALIGNMENT_LEFT, -1, 30, UIK.c("red"))
+	if bool(view.get("pudding_sat", false)):
+		var pt: Texture2D = _t("obj_pudding")
+		var ps: float = inner * 1.1
+		var bob: float = sin(Time.get_ticks_msec() / 400.0) * 5.0
+		draw_texture_rect(pt, Rect2(c + Vector2(-ps / 2.0, inner * 0.15 + bob), Vector2(ps, ps * 0.89)), false)
+		var f3: Font = UIK.font("head")
+		draw_string_outline(f3, c + Vector2(-118, -inner * 0.35), "PUDDING IS ASLEEP ON IT", HORIZONTAL_ALIGNMENT_LEFT, -1, 19, 7, UIK.ink())
+		draw_string(f3, c + Vector2(-118, -inner * 0.35), "PUDDING IS ASLEEP ON IT", HORIZONTAL_ALIGNMENT_LEFT, -1, 19, UIK.c("pink"))
 	draw_texture_rect(_bezel, Rect2(c - Vector2(r, r), Vector2(r, r) * 2.0), false)

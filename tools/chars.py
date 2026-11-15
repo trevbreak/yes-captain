@@ -29,6 +29,26 @@ def frame_begin(svg, pen, col):
 
 
 def frame_end(svg, pen):
+    import ink
+    if ink.MOOD == "panic":
+        # sweat flying off, cartoon style
+        for (x, y, r, rot) in ((40, 70, 9, -0.7), (214, 62, 10, 0.7), (28, 112, 7, -1.0), (228, 108, 7, 1.0)):
+            drop = [(x, y - r * 1.5), (x + r * 0.8, y + r * 0.3), (x, y + r), (x - r * 0.8, y + r * 0.3)]
+            c, s = math.cos(rot), math.sin(rot)
+            drop = [(x + (px - x) * c - (py - y) * s, y + (px - x) * s + (py - y) * c) for px, py in drop]
+            pen.blob(drop, "sky", w=3)
+    elif ink.MOOD == "cheer":
+        for (x, y, r) in ((44, 58, 13), (214, 70, 11), (200, 34, 8)):
+            star = []
+            for i in range(8):
+                a = -math.pi / 2 + i * math.tau / 8
+                rr = r if i % 2 == 0 else r * 0.38
+                star.append((x + rr * math.cos(a), y + rr * math.sin(a)))
+            pen.shape(star, "yellow", w=2.6, wob=0.2)
+    elif ink.MOOD == "busy":
+        # a little storm of effort lines over the head
+        for (x0, y0, x1, y1) in ((70, 26, 62, 10), (128, 18, 128, 2), (186, 26, 194, 10)):
+            pen.line([(x0, y0), (x1, y1)], w=4)
     svg.clip_end()
     pen.shape(circle(CX, CY, FR, 96), None, w=7, wob=0.8)
 
@@ -445,13 +465,21 @@ ALL = {"captain": captain, "helm": helm, "engines": engines, "weapons": weapons,
        "engineer": engineer, "igor": igor, "pudding": pudding, "thrupp": thrupp, "overlord": overlord, "gristle": gristle}
 
 
+MOODS = ("busy", "panic", "cheer")
+MOODY = ("captain", "helm", "engines", "weapons", "sensors", "shields", "engineer", "igor")
+
+
 def build(out):
+    import ink
     os.makedirs(out, exist_ok=True)
     for i, (name, fn) in enumerate(ALL.items()):
-        svg = SVG(S, S)
-        pen = Pen(svg, 5.5, 1.3, seed=100 + i * 37)
-        fn(svg, pen)
-        svg.save(os.path.join(out, "portrait_%s.svg" % name))
+        for mood in ("",) + (MOODS if name in MOODY else ()):
+            ink.MOOD = mood
+            svg = SVG(S, S)
+            pen = Pen(svg, 5.5, 1.3, seed=100 + i * 37)
+            fn(svg, pen)
+            svg.save(os.path.join(out, "portrait_%s%s.svg" % (name, "_" + mood if mood else "")))
+    ink.MOOD = ""
 
 
 if __name__ == "__main__":

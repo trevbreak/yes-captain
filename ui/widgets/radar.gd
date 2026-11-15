@@ -33,7 +33,10 @@ func _process(dt: float) -> void:
 	queue_redraw()
 
 func _gui_input(e: InputEvent) -> void:
-	if e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT:
+	if Pointer.swallow(e):
+		accept_event()
+		return
+	if Pointer.down(e) != Pointer.NONE:
 		var best: int = -1
 		var bd: float = 46.0
 		for h in _hits:

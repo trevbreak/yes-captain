@@ -37,7 +37,7 @@ func build() -> void:
 	fr.alignment = BoxContainer.ALIGNMENT_CENTER
 	col.add_child(fr)
 	fire_btn = BigButton.new("FIRE", "red", true, 120)
-	fire_btn.key_hint = "Space"
+	keyed(fire_btn, KEY_SPACE)
 	fire_btn.held.connect(func(on: bool): send("fire", on))
 	fr.add_child(fire_btn)
 	thermo = Gauges.Thermo.new("HEAT", 140)
@@ -48,10 +48,11 @@ func build() -> void:
 	tr.alignment = BoxContainer.ALIGNMENT_CENTER
 	torp_box.add_child(tr)
 	load_btn = BigButton.new("LOAD", "mustard", true, 96)
-	load_btn.key_hint = "L"
+	keyed(load_btn, KEY_L)
 	load_btn.held.connect(func(on: bool): send("load", on))
 	tr.add_child(load_btn)
 	torp_btn = UIK.btn("FIRE TORPEDO", "red", func(): send("torpedo", true), "torpedo", 20)
+	torp_btn.custom_minimum_size = Vector2(0, 72)
 	torp_btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	tr.add_child(torp_btn)
 	torp_lbl = UIK.label("", 20)

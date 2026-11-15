@@ -1,204 +1,231 @@
 # YES, CAPTAIN!
 
-A LAN-party **bridge simulator for loud friends**, in a hand-inked 1930s cartoon style.
+A **bridge simulator for four loud friends**, in a hand-inked 1930s cartoon style. Played in the browser on
+phones and laptops, hosted from one Docker container.
 
 > The captain sees everything and touches nothing.
-> Everyone else touches one thing and sees almost nothing.
+> Everyone else works two controls and sees almost nothing.
 > The only way to fly is to talk. Constantly.
 
-![The captain's screen: the chart, the mission, the ship and the crew](docs/screenshots/04_captain.jpg)
+![The captain's screen: the chart, the mission, and a console for each crew role](docs/screenshots/06_captain.jpg)
 
 You're the crew of a garbage hauler from the Free Lanes. On bin day you collect a skip and find **Pudding**
 inside: the beloved pet of the Hegemony's Overlord. Now the whole Hegemony fleet wants Pudding back, the ship's
 robot **IGOR** thinks you are all idiots, and the ship keeps breaking.
 
-Built with **Godot 4** (developed on 4.7, GDScript only, Compatibility renderer). Laptops, LAN first.
+Built with **Godot 4.7** (GDScript only, Compatibility renderer).
 
 ---
 
+## How a session goes
+
+1. **Open the page** on a laptop hooked up to the TV. Type a name, *Find a crew online*, *Open a crew room*.
+   Whoever opens the room starts as the **Captain**.
+2. **Everyone else scans the QR code** on the TV with their phone (or goes to the address and types the big
+   four-letter code). The invite link works too.
+3. **Take a seat.** That's all: no ready button. Robots take any role nobody wants.
+4. **IGOR's briefing.** The story and the plan play on the Captain's screen, read aloud and subtitled; each phone
+   shows only what's new and *your* two jobs. Everyone presses ready, or the Captain launches.
+5. **Fly it.** Shout.
+6. **Debrief:** stars or a pay slip, crew awards, *Shuffle seats* so somebody else gets to be Captain.
+
+| | |
+|---|---|
+| ![The Crew Room: four seats, a big code and a QR code to scan](docs/screenshots/03_crew_room.jpg) | ![The Depot: open crews on the server](docs/screenshots/02_depot.jpg) |
+
 ## The idea
 
-Inspired by *Artemis* and *Empty Epsilon*, with *Overcooked*-style panic and a dash of *Cosmoteer*. The fun
-lives in the gap between two kinds of knowledge:
+The fun lives in the gap between two kinds of knowledge:
 
-- **The Captain** has the big picture and no controls at all. They see:
-  - a chart of everything around the ship;
-  - the mission goal;
-  - a board of every ship system;
-  - a live line on what each crew member is doing;
-  - **forecasts** like *"Reactor overload in 5s"* or *"Cruiser charging at 12 o'clock!"*, each showing whose face
-    to shout at.
-- **The crew** each see one thing in depth. Helm only has a compass. Weapons only sees down the gun barrel.
-  Engines can't see where the ship is going. The host only sends each seat what that seat is allowed to know.
+- **The Captain** has the big picture and no controls at all: a chart of everything around the ship, the goal,
+  a console for each crew role showing who's at it and what their instruments say, and **forecasts** such as
+  *"Reactor overload in 5s"*.
+- **The crew** each see their own desk in depth and nothing else. The Driver only has a compass. The Stoker only
+  sees down the gun barrel and can't see where the ship is going. The server only sends each player what their
+  seat may know.
 
-The captain says *"Shield to 3 o'clock! Engines, ease off, the reactor's about to blow!"* and the crew make it
-happen.
+The roles are grouped so that **no crew member can manage without the Captain** (the radar is never on the same
+desk as the wheel, the gun or the shield), and so the crew still need **each other**:
 
-## Easy to pick up, deeper every mission
+| Rule | Who has to talk |
+|---|---|
+| The ship turns tighter when it's slow | Driver and Stoker |
+| Turning the ship moves where the danger is | Driver (wheel) and Driver (shield): one shout, two jobs |
+| Scanned enemies get an aiming mark in the gun scope | Tech and Stoker |
+| A part mends twice as fast while nobody is using it | Tech and whoever is using it |
+| A glitch fix needs someone else to do something while the Tech holds REPAIR | Always a third role |
 
-In mission 1 each crew member gets **one control**. Each later mission adds **one** new thing. IGOR's briefing
-introduces it, and the screen marks whose station it lives on. Nothing appears before it's been taught.
+## The crew: four seats
+
+| Seat | Character | Works | Desk |
+|---|---|---|---|
+| **Captain** | Captain Mo Pennywhistle (walrus) | Nothing. Voice only. | The chart and four consoles |
+| **Driver** | Dex Wheelwright (duck) | Helm + Shields | Hold LEFT / RIGHT to turn, compass, drag the shield dial; barrel roll; keep Pudding calm |
+| **Stoker** | Big Sal Throttleby (bulldog) | Engines + Weapons | Throttle and heat on the left, gun scope, turret dial and FIRE on the right; boost, reactor power, torpedoes |
+| **Tech** | Gus Spanner (raccoon) | Sensors + Engineer | Radar: pick a blip, hold SCAN or PULL (tractor beam); ship plan: pick a room, hold REPAIR; IGOR's manual |
+
+| | | |
+|---|---|---|
+| ![The Driver's desk](docs/screenshots/07_driver.jpg) | ![The Stoker's desk](docs/screenshots/07_stoker.jpg) | ![The Tech's desk](docs/screenshots/07_tech.jpg) |
+
+**Fewer than four of you?** Robots (IGOR's relatives) take the empty roles. With two or more humans the Captain
+must be one of them. **On your own**, choose *Practise with robots*, take any seat, and **IGOR captains**: he reads
+out each goal and calls the turns, targets, scans and repairs for your role.
+
+**Late?** Anyone who arrives mid-shift can take over a robot's role on the spot.
+
+## Phones first
+
+Three of the four players are usually on phones, so:
+
+- **Both thumbs work at once** on every desk: hold FIRE while turning the turret, hold LEFT while swinging the shield.
+- **Held upright**, the title, the crew list and the Crew Room go to one column; once the game starts it asks to be
+  turned sideways (with a full-screen button that also locks landscape where the phone allows).
+- **Finger-sized buttons** (at least 44 px on a phone), and keyboard hints only appear once someone presses a key.
+- **Tap anything with a "?"** (or press and hold a button) to see what it does. Tooltips can't hover on a phone.
+- **Dropped out?** A phone that loses its connection shows *Reconnecting...* and gets back in by itself, to the same
+  seat. A robot holds the seat meanwhile. The screen is kept awake so phones don't doze off during briefings.
+- **Typing** uses the phone's own text box, so every keyboard (and paste, and autofill) works.
+
+| | | |
+|---|---|---|
+| ![Title screen on a phone held upright](docs/screenshots/12_phone_title.jpg) | ![The Crew Room on a phone held upright](docs/screenshots/13_phone_crew_room.jpg) | ![Turn sideways](docs/screenshots/14_phone_turn_sideways.jpg) |
+
+![The Stoker's desk on a phone held sideways](docs/screenshots/15_phone_stoker.jpg)
+
+## Training: one new thing per mission
 
 | # | Mission | New today |
 |---|---|---|
 | 1 | Driving Lesson | The basics: steer, throttle, scan, shoot, shield, repair |
-| 2 | Bin Day | **Tractor beam**, and the discovery of Pudding |
+| 2 | Bin Day | **Tractor beam** (the Tech), and the discovery of Pudding |
 | 3 | Running Hot | **Heat**: full throttle and non-stop firing overheat things, and things catch **fire** |
 | 4 | Pet Sitting | **Pudding's mood**: upset Pudding escapes and chews the ship |
-| 5 | Customs | **The comms dial**: only Sensors can hear the officer's demands |
-| 6 | The Big One | **Torpedoes and weak spots**: scan twice, get behind the cruiser, fire |
-| 7 | Hot Pursuit | **Boost and barrel roll**: outrun a patrol you can't shoot |
-| 8 | Brownout | **Power and overload**: the reactor can't run everything at full |
-| 9 | Grabbers | **Grabber drones**: shake them off, shield them off or shoot them off |
+| 5 | Customs | **The comms dial**: only the Tech can hear the officer's demands |
+| 6 | The Big One | **Torpedoes and weak spots** |
+| 7 | Hot Pursuit | **Boost and barrel roll** |
+| 8 | Brownout | **Power and overload** (the Stoker shares out the reactor) |
+| 9 | Grabbers | **Grabber drones** |
 | 10 | Run to Haven | Everything at once |
 
-Missions unlock in order and remember your best stars. A mission earns up to 3 stars: one for finishing, one for
-keeping the hull above 60%, and one for beating par time.
+## The Shift: never the same twice
 
-![The Crew Room: pick a mission from the career, then your seats](docs/screenshots/02_crew_room.jpg)
+Online rooms open on **the Shift**: three jobs, and rent to make.
 
-## The seats
+![The job board](docs/screenshots/04_job_board.jpg)
 
-| Seat | Persona | Hero control | Unlocks later |
-|---|---|---|---|
-| **Captain** | Captain Mo Pennywhistle (walrus) | None. Voice only. | |
-| **Helm** | Dex Wheelwright (duck) | Ship's wheel (stays where you leave it) | Barrel roll |
-| **Engines** | Big Sal Throttleby (bulldog) | Brass throttle (stays where you leave it) | Heat, boost |
-| **Weapons** | Rhoda "Boom" Blastworth (cat) | Turret dial + FIRE, viewed through a periscope | Gun heat, torpedoes |
-| **Sensors** | Ozzy Squint (owl) | Radar: click a blip, hold SCAN | Comms dial, weak-spot scans |
-| **Shields** | Nana Fluffington (turtle) | Shield dial, marked like a clock | Tractor beam, Pudding care |
-| **Engineer** | Gus Spanner (raccoon) | Ship cutaway: click a room, hold REPAIR | Power bars and overload |
-
-One player can hold several seats and switch between them with keys **1-7**. IGOR's robot relatives fill any
-empty seat, so you can play solo, as a pair, or with a full crew of seven. A robot crew can finish every mission.
+- **Jobs are dealt, not written:** a task x a place (rock belt, minefield, fog...) x one or two snags (rush order,
+  second-hand ship, Thrupp is watching...). The crew votes on the job board; the Captain picks. Safer jobs pay less.
+- **A director drops trouble in as you fly:** drones, meteors, stray cargo worth a bonus. It waits until the crew
+  is clear of the last lot, so there's time to spot it, say it and do it.
+- **Glitches.** The ship stops behaving and nobody is told what: the wheel is on backwards, the compass is drunk,
+  the Captain's chart turns upside down. The Tech finds the room marked **?!** and reads **IGOR's manual** out
+  loud; the fix always needs a crew member in *another* role to do something with their own control while the
+  Tech holds REPAIR.
+- **IGOR found a part:** between jobs, fit one bodged upgrade with a catch (*bigger engine, runs hot*).
+- **Hard mode** (a Crew Room switch): radio calls only the Tech can hear, torpedoes and weak spots, and trouble
+  arriving twice as fast.
 
 | | |
 |---|---|
-| ![Weapons: the view down the barrel](docs/screenshots/05_weapons.jpg) | ![Sensors: the radar](docs/screenshots/06_sensors.jpg) |
-| ![Helm: the wheel and compass](docs/screenshots/07_helm.jpg) | ![Engines: throttle, speed and heat](docs/screenshots/08_engines.jpg) |
-| ![Shields: the shield dial, tractor beam and Pudding](docs/screenshots/09_shields.jpg) | ![Engineer: fires, breakages and power](docs/screenshots/10_engineer.jpg) |
-
-## How a session goes
-
-1. **Title screen:** play with a robot crew, host a LAN game, or join one.
-2. **Crew Room:** pick a mission from the career, then take your seats.
-3. **IGOR's briefing**, read aloud and subtitled, in three pages: what's going on, the plan (numbered steps) and
-   **new today**. Everyone presses *I'M READY*, then a 3-second countdown starts the mission.
-4. **The mission:** the captain's screen tracks the current step; each crew screen has a *Your job now* hint.
-5. **Debrief:** stars, crew awards (*Duct Tape Hero*, *The Wall*, *Pudding Whisperer*, *IGOR's Disappointment*...),
-   then the next mission or another try.
-
-| | |
-|---|---|
-| ![The briefing](docs/screenshots/03_briefing.jpg) | ![The debrief](docs/screenshots/11_debrief.jpg) |
-
-## Core features
-
-- **Information asymmetry, enforced by the server.** Each seat gets a filtered snapshot: the helm's data contains
-  no map, no contacts and no goals, and a test checks this.
-- **Forecasts for the captain:** incoming fire and which side it's coming from, enemies charging up, overload and
-  overheat countdowns, fires, broken systems, stuck grabbers, Pudding on the loose.
-- **Everything breaks, everything is fixable.** Hits damage the system on the side that was hit. Fires spread
-  until the Engineer puts them out. If one engine is down, the other one pulls the ship round.
-- **Sticky controls.** The wheel, throttle and dials stay where you leave them, so you can let go and shout.
-- **IGOR**, the deadpan third-person ship robot from the Foundry. He narrates and mocks the crew, and he's voiced
-  with the OS text-to-speech (you can turn it off).
-- **Hand-inked art, no 3D.** Rubber-hose cartoon animals, wobbly brush outlines, cream paper, film grain. All of
-  it is generated as SVG by `tools/make_art.py` and drawn crisply by the engine at any resolution.
-- **Laptop-friendly layouts**, checked automatically from 1024×768 up to 1920×1080.
-
-![The title screen](docs/screenshots/01_title.jpg)
+| ![The Tech reads IGOR's manual](docs/screenshots/08_glitch_manual.jpg) | ![The chart's upside down](docs/screenshots/09_upside_down_chart.jpg) |
+| ![The Stoker's short briefing](docs/screenshots/05_briefing.jpg) | ![End of shift](docs/screenshots/11_shift_end.jpg) |
 
 ## Run it
+
+**On a server (the real thing):** see [docs/DEPLOY.md](docs/DEPLOY.md). One container, one web address.
+
+**On this computer:**
 
 ```bash
 godot --path .
 ```
 
-Or open the folder in the Godot editor and press Play.
-
-| Title screen button | What it does |
+| Title screen | What it does |
 |---|---|
-| **Play with a robot crew** | You start as captain; robots run every other station. Take more seats in the Crew Room. |
-| **Host a LAN game** | Friends join over the LAN. The Crew Room shows your address (port 7777). |
-| **Join** | Type the host's address and pick seats in the Crew Room. |
+| **Practise with robots** | A game in this window; robots run every seat you don't take, and IGOR captains if you don't. |
+| **Join a server** | Type a server's address (desktop build). The browser build finds its own server. |
+| **Host on this network** | Friends with the desktop build join your address directly (port 7777). |
 
-For a dedicated host with no player (e.g. on a TV box):
+**A server without Docker**, for trying things out:
 
 ```bash
-godot --headless --path . -- --server --port=7777
+scripts/build_web.sh                                              # exports the browser build to export/web
+godot --headless --path . scenes/main.tscn -- --server --port=7777 # the room server
+python3 -m http.server 8060 --directory export/web                # serves the page
+# then open  http://localhost:8060/?server=ws://localhost:7777
 ```
 
-The first player to join becomes the host and starts the missions.
-
-**Networking:** WebSocket over TCP port 7777 (open it in your firewall). It works across the internet with a
-port-forward or a VPN such as Tailscale. There's no built-in voice chat: shouting across the room is the game.
+**Voice chat** is built in for crews in different places: the host switches it on in the Crew Room, each player
+has a mute button (**M**). It needs an `https` address; the browser will ask for the microphone.
 
 ### Keys
 
-| Seat | Keys |
+Every desk works with mouse or touch; keys are there for laptop players. **Rebind them** from the menu
+(**Esc**, then *Keys*); your choices are saved in your browser.
+
+| Seat | Keys (defaults) |
 |---|---|
-| Any | **1-7** switch seat, **Esc** menu |
-| Helm | **A / D** turn the wheel, **S** straighten up, **R** barrel roll |
-| Engines | **W / S** throttle, **X** all stop, **B** boost |
-| Weapons | **A / D** turn the turret, **Space** fire, **L** load torpedo, **T** fire torpedo |
-| Sensors | **Tab** next blip, **Space** scan, **Q / E** comms dial |
-| Shields | **A / D** turn the shield, **T** tractor, **P** pet Pudding, **C** shake the tin, **N** snack |
-| Engineer | Click a room, **Space** repair |
+| Any | **Esc** or **`** menu, **M** mute |
+| Driver | **A / D** (or arrows) hold to turn, **R** barrel roll, **Q / E** swing the shield, **P** pet Pudding, **C** shake the tin, **N** snack |
+| Stoker | **W / S** throttle, **X** all stop, **B** boost, **A / D** turn the turret, **Space** fire, **L** load torpedo, **T** fire torpedo |
+| Tech | **Tab** next blip, **Space** scan, **T** tractor beam, **Q / E** comms dial, **R** repair (click a room first) |
 
 ## Project layout
 
 ```
-sim/        the rules, no nodes: Ship, World (entities, enemy AI, shots, every mechanic), Mission + Missions
-            (the career), Intents (every control), Snapshots (what each seat may know, and the captain's forecasts)
-net/        GameHost (authoritative: seats, robots, briefing/ready-up, debrief, progress) and Net (WebSocket glue)
+sim/        the rules, no nodes: Ship, World, Mission + Missions (training), Jobs (the Shift's dealt jobs and
+            their director), Glitches, Deck, Intents, Snapshots (what each seat may know), K (the four roles)
+net/        Hub (the server's rooms), GameHost (one crew's game: seats, robots, IGOR as captain, the Shift,
+            reconnecting), Net (WebSocket glue for server, local play and clients)
 bots/       the robot crew: they work the same controls as humans
-run/        Progress (unlocked missions and stars, saved locally)
-captain/    the Captain's Table
-stations/   one screen per crew seat
-ui/         the design system (UIK, Art, InkBox, Paper, Film), widgets (wheel, throttle, dials, scope, radar,
-            chart, cutaway, big buttons, gauges), menu, Crew Room, briefing, debrief, LayoutCheck
-content/    IGOR's lines and synthesized sound effects
-assets/     generated SVG art and the bundled fonts
-tools/      make_art.py and friends (the art generator), artboard.gd and shot.gd (art review)
-tests/      headless tests
-docs/       design docs; V2_DESIGN.md describes the current design
+run/        Progress (a crew's career; it lives in the host player's browser)
+captain/    the Captain's bridge
+stations/   the six station screens, and RoleDesk (a role's two stations on one console)
+ui/         the design system (UIK, Art, InkBox, Paper, Film, Fx, Face), widgets (FitBox, Pointer for
+            multi-touch...), title card, the Depot, Crew Room, briefing, job board, debrief, voice chat, Qr,
+            Keys, Explain (tap to explain), LayoutCheck
+content/    IGOR's lines and the sound
+assets/     generated SVG art, the music loop, the bundled fonts
+tools/      make_art.py (all the art), make_music.py (the music), mock-up renderers
+deploy/     Dockerfile, entrypoint, web page shell (wake lock, native text box), voice.js, Unraid template
+tests/      headless tests, and a QR reader check (qr_decode.swift, macOS)
+docs/       DEPLOY.md, V3_ONLINE_PLAN.md, older design notes, screenshots
 ```
 
 ## Tests and tools
 
 ```bash
-scripts/run_tests.sh          # everything (about 3 minutes)
+scripts/run_tests.sh          # everything (about 10 minutes)
 scripts/run_tests.sh quick    # one seed per mission
-NOWINDOW=1 scripts/run_tests.sh   # skip the windowed layout checks (no display)
+NOWINDOW=1 scripts/run_tests.sh   # skip the windowed checks (no display)
 ```
 
 The suite covers:
-- a robot crew beating all 10 missions on several seeds;
+- a robot crew beating all 10 missions, and flying every kind of dealt job with places, snags and glitches on;
+- a whole Shift run by the host, and the glitch plumbing (bent controls, bent screens, the manual);
+- IGOR captaining a lone player: a Driver following only his calls gets through the first mission;
+- the room server: the Depot, create and join by code, two rooms flying at once with nothing crossing between
+  them, seat secrecy, whole-role seats, reconnecting (silently dead and properly dropped connections), taking over
+  a robot mid-mission, kick, room limits, flooding and rubbish input;
+- QR codes made by the game, read back by macOS's own QR reader;
+- two thumbs at once on the Stoker's and Driver's desks, tap and hold to explain, and rebinding keys;
 - UI smoke tests that visit every seat and press every control;
-- a host plus a separate client process over the network, including the information-leak check and the sticky
-  controls check;
-- **layout checks** of every screen at several resolutions. These look for controls that are off-screen, clipped
-  or overlapping, text on text or on controls, and panels that hide controls below the fold. There's also a stress
-  pass with everything broken at once.
+- a host plus a separate client process over the network;
+- **layout checks** of every screen at six window sizes, plus phone sizes upright and sideways with touch-sized
+  buttons.
 
-Useful flags for the main scene (after `--`):
+Flags for the main scene (after `--`): `--server`, `--port=N`, `--solo`, `--host`, `--join=IP`, `--room=CODE`,
+`--layoutcheck` (with `--touchui` for touch-sized buttons and `--targets=44` to flag small ones),
+`--touchtest`, `--autotest=<mission>`, `--readmeshots=DIR` and `--phoneshots=DIR` (these screenshots; the phone
+ones at `--resolution 390x844 --touchui`), `--shiftshots=DIR`, `--tour`, `--nograin`.
 
-| Flag | What it does |
-|---|---|
-| `--solo`, `--host`, `--join=IP`, `--server`, `--port=N` | Start straight into a game |
-| `--autotest=<mission> [--shots=DIR]` | Robots fly a mission while every seat is screenshotted |
-| `--layoutcheck[=<mission>]` | Run the layout checker on every screen; the exit code is the number of issues |
-| `--readmeshots=DIR` | Regenerate the screenshots in this README |
-| `--tour [--speed=N]` | A robot crew plays the career, with a screenshot at each phase |
-| `--nograin` | Turn off the film grain |
-
-Regenerate the art with `python3 tools/make_art.py`.
+Regenerate the art with `python3 tools/make_art.py` and the music with `python3 tools/make_music.py`.
 
 ## Notes
 
 - Fonts: [Luckiest Guy](https://fonts.google.com/specimen/Luckiest+Guy) (Apache 2.0) and
-  [Patrick Hand](https://fonts.google.com/specimen/Patrick+Hand) (SIL OFL), bundled in `assets/fonts/` with their
-  licences.
-- The setting is original. It's inspired by space operas but uses no one else's IP.
-- All balance numbers were tuned with robot crews. Expect missions to need retuning once humans play them.
+  [Patrick Hand](https://fonts.google.com/specimen/Patrick+Hand) (SIL OFL), bundled with their licences.
+- The setting, the art and the music are original and generated by the scripts in `tools/`.
+- Balance was tuned with robot crews. The server keeps a log of real crews' jobs (see
+  [docs/DEPLOY.md](docs/DEPLOY.md)) for retuning par times and pay.

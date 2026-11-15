@@ -3,6 +3,9 @@ extends RefCounted
 ## Automated layout QA. Finds controls that are off-screen, overflow their container, are clipped
 ## by a parent, or overlap another clickable control. Used by the --layoutcheck autotest.
 
+## > 0: also flag touchable controls smaller than this many screen pixels (44 = Apple's guideline)
+static var min_target: float = 0.0
+
 static func _interactive(n: Control) -> bool:
 	return n is BaseButton or n is LineEdit or n is ShipWheel or n is ThrottleLever or n is ClockDial or n is Radar \
 		or (n is Cutaway and (n as Cutaway).clickable) or n is BigButton
@@ -76,7 +79,7 @@ static func check(root: Control) -> Array:
 		if par is Container and not (par is ScrollContainer):
 			var pr: Rect2 = (par as Control).get_global_rect()
 			if r.end.x > pr.end.x + 3.0 or r.end.y > pr.end.y + 3.0 or r.position.x < pr.position.x - 3.0 or r.position.y < pr.position.y - 3.0:
-				issues.append("OVERFLOW " + _desc(n) + " outside parent " + str(pr).replace(" ", ""))
+				issues.append("OVERFLOW " + _desc(n) + " outside parent " + str(pr).replace(" ", "") + " in " + str(par.get_path()).get_slice("/", -1) + " < " + str(par.get_parent().get_path()).get_slice("/", -1))
 				continue
 		# 3. clipped away by a clipping ancestor
 		var cr: Rect2 = _clip_rect(n)
@@ -87,15 +90,20 @@ static func check(root: Control) -> Array:
 		if n is Label:
 			var lb: Label = n
 			if lb.autowrap_mode == TextServer.AUTOWRAP_OFF and not lb.clip_text and lb.text_overrun_behavior == TextServer.OVERRUN_NO_TRIMMING:
-				var w: float = lb.get_theme_font("font").get_string_size(lb.text, HORIZONTAL_ALIGNMENT_LEFT, -1, lb.get_theme_font_size("font_size")).x
+				var w: float = lb.get_theme_font("font").get_string_size(lb.text.to_upper() if lb.uppercase else lb.text, HORIZONTAL_ALIGNMENT_LEFT, -1, lb.get_theme_font_size("font_size")).x * lb.get_global_transform().get_scale().x   # a FitBox may have shrunk it
 				if w > r.size.x + 4.0 and not lb.text.contains("\n"):
 					issues.append("TEXT-OVERFLOW " + _desc(n))
 			elif lb.autowrap_mode == TextServer.AUTOWRAP_OFF and lb.clip_text and lb.text_overrun_behavior == TextServer.OVERRUN_NO_TRIMMING:
-				var w2: float = lb.get_theme_font("font").get_string_size(lb.text, HORIZONTAL_ALIGNMENT_LEFT, -1, lb.get_theme_font_size("font_size")).x
+				var w2: float = lb.get_theme_font("font").get_string_size(lb.text.to_upper() if lb.uppercase else lb.text, HORIZONTAL_ALIGNMENT_LEFT, -1, lb.get_theme_font_size("font_size")).x * lb.get_global_transform().get_scale().x
 				if w2 > r.size.x + 4.0 and not lb.text.contains("\n"):
 					issues.append("TEXT-CLIPPED " + _desc(n))
 		if _interactive(n):
 			inter.append(n)
+			if min_target > 0.0 and not (n is LineEdit and n.has_meta("native_text")):
+				var k: float = float(n.get_window().size.x) / maxf(1.0, n.get_viewport_rect().size.x)
+				var css: Vector2 = r.size * k
+				if minf(css.x, css.y) < min_target - 0.5:
+					issues.append("SMALL-TARGET %dx%d px %s" % [int(css.x), int(css.y), _desc(n)])
 		if n is Label:
 			labels.append(n)
 	# 4. overlapping clickable controls
@@ -144,7 +152,7 @@ static func _text_rect(l: Label) -> Rect2:
 		return Rect2(r.position.x, top, r.size.x, h).grow(-2.0)
 	var f: Font = l.get_theme_font("font")
 	var fs: int = l.get_theme_font_size("font_size")
-	var w: float = minf(r.size.x, f.get_string_size(l.text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x)
+	var w: float = minf(r.size.x, f.get_string_size(l.text.to_upper() if l.uppercase else l.text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x)
 	var x: float = r.position.x
 	match l.horizontal_alignment:
 		HORIZONTAL_ALIGNMENT_CENTER:

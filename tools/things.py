@@ -371,7 +371,91 @@ def spark(out):
     save(svg, out, "fx_star")
 
 
+def doodads(out):
+    """Little things left lying about the stations: they make a console somebody's desk."""
+    # a tin mug of tea, with steam
+    svg = SVG(120, 140)
+    pen = Pen(svg, 4.5, 0.9, 301)
+    for (x, s) in ((44, 1), (66, -1)):
+        pen.line([(x, 46), (x + 7 * s, 34), (x - 5 * s, 22), (x + 4 * s, 8)], w=3.2, ink=P("grey"))
+    pen.blob([(86, 74), (110, 78), (108, 104), (86, 108)], None, w=6)
+    pen.shape(rrect(24, 54, 66, 72, 12), "cream", shade=(-5, -5, 0.2), shadow=(4, 5, INK, 0.5))
+    pen.shape(ellipse(57, 58, 32, 9, 40), darker("brown", 0.1), w=4)
+    pen.shape(rrect(30, 86, 54, 14, 3), "red", w=3)
+    save(svg, out, "doodad_mug")
+    # a note from IGOR, taped on
+    svg = SVG(170, 130)
+    pen = Pen(svg, 3.6, 0.8, 311)
+    svg.group("rotate(-5 85 65)")
+    pen.shape([(14, 20), (156, 16), (158, 112), (18, 116)], "yellow", shadow=(4, 5, INK, 0.45))
+    for y, x1 in ((46, 138), (64, 128), (82, 140), (100, 96)):
+        pen.line([(30, y), ((30 + x1) / 2, y + 1.5), (x1, y)], w=3.2, ink=darker("yellow", 0.55))
+    pen.shape([(64, 6), (108, 4), (110, 26), (66, 28)], lighter("grey2", 0.4), w=2.2)
+    svg.end()
+    save(svg, out, "doodad_note")
+    # a spanner
+    svg = SVG(170, 90)
+    pen = Pen(svg, 4.5, 0.8, 321)
+    svg.group("rotate(-14 85 45)")
+    pen.shape(rrect(40, 36, 96, 18, 8), "grey2", shade=(-3, -3, 0.25), shadow=(4, 5, INK, 0.45))
+    pen.blob([(22, 22), (44, 26), (50, 45), (44, 64), (22, 68), (30, 54), (20, 45), (30, 36)], "grey2", shade=(-3, -3, 0.25))
+    pen.shape(circle(140, 45, 17, 28), "grey2", shade=(-3, -3, 0.25))
+    pen.shape(circle(140, 45, 7, 6), "paper2", w=3, wob=0.2)
+    svg.end()
+    save(svg, out, "doodad_spanner")
+    # a pink tuft: Pudding has been here
+    svg = SVG(110, 90)
+    pen = Pen(svg, 4.0, 1.0, 331)
+    pen.blob([(18, 70), (22, 44), (36, 54), (40, 24), (56, 48), (70, 20), (76, 50), (92, 40), (94, 70), (56, 80)], "pink", shade=(-4, -4, 0.18),
+             shadow=(3, 4, INK, 0.4))
+    pen.shine(46, 56, 9, 3.5)
+    save(svg, out, "doodad_fluff")
+    # a snack bowl
+    svg = SVG(130, 90)
+    pen = Pen(svg, 4.5, 0.9, 341)
+    for (x, y, c) in ((44, 34, "orange"), (64, 26, "mustard"), (84, 34, "orange"), (56, 40, "mustard"), (74, 40, "brown")):
+        pen.shape(circle(x, y, 11, 20), c, w=3, shade=(-2, -2, 0.2))
+    pen.blob([(14, 40), (116, 40), (104, 74), (65, 82), (26, 74)], "sky", shade=(-5, -4, 0.2), shadow=(4, 5, INK, 0.45))
+    save(svg, out, "doodad_bowl")
+    # a pencil
+    svg = SVG(170, 60)
+    pen = Pen(svg, 3.8, 0.6, 351)
+    svg.group("rotate(8 85 30)")
+    pen.shape([(20, 22), (128, 22), (128, 40), (20, 40)], "mustard", shade=(-2, -3, 0.2), shadow=(3, 4, INK, 0.45))
+    pen.shape([(128, 22), (152, 31), (128, 40)], "sand", w=3.2)
+    pen.shape([(144, 28), (152, 31), (144, 34)], INK, w=0)
+    pen.shape([(10, 22), (22, 22), (22, 40), (10, 40)], "rose", w=3.2)
+    svg.end()
+    save(svg, out, "doodad_pencil")
+    # a compass rose for the captain's chart
+    svg = SVG(220, 220)
+    pen = Pen(svg, 3.4, 0.6, 361)
+    c = 110
+    pen.shape(circle(c, c, 92, 80), None, w=3.2)
+    pen.shape(circle(c, c, 78, 72), None, w=1.8)
+    for i in range(16):
+        a = i * math.tau / 16
+        r0 = 78 if i % 2 else 70
+        pen.line([(c + r0 * math.cos(a), c + r0 * math.sin(a)), (c + 92 * math.cos(a), c + 92 * math.sin(a))], w=2.2, taper=1.0)
+    for i in range(4):
+        a = -math.pi / 2 + i * math.pi / 2 + math.pi / 4
+        tip = (c + 52 * math.cos(a), c + 52 * math.sin(a))
+        l = (c + 11 * math.cos(a + math.pi / 2), c + 11 * math.sin(a + math.pi / 2))
+        r = (c + 11 * math.cos(a - math.pi / 2), c + 11 * math.sin(a - math.pi / 2))
+        pen.shape([tip, l, r], "paper3", w=2.4, wob=0.3)
+    for i in range(4):
+        a = -math.pi / 2 + i * math.pi / 2
+        tip = (c + 86 * math.cos(a), c + 86 * math.sin(a))
+        l = (c + 15 * math.cos(a + math.pi / 2), c + 15 * math.sin(a + math.pi / 2))
+        r = (c + 15 * math.cos(a - math.pi / 2), c + 15 * math.sin(a - math.pi / 2))
+        pen.shape([tip, l, (c, c)], "red" if i == 0 else "cream", w=2.8, wob=0.3)
+        pen.shape([tip, r, (c, c)], darker("red", 0.25) if i == 0 else "paper3", w=2.8, wob=0.3)
+    pen.shape(circle(c, c, 7, 20), "gold", w=2.6, wob=0.2)
+    save(svg, out, "doodad_rose")
+
+
 def build(out):
+    doodads(out)
     our_ship(out)
     cutaway(out)
     ring(out)

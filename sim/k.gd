@@ -4,6 +4,58 @@ extends RefCounted
 
 const SEATS: Array = ["captain", "helm", "engines", "weapons", "sensors", "shields", "engineer"]
 const STATIONS: Array = ["helm", "engines", "weapons", "sensors", "shields", "engineer"]
+## The crew is four people: the Captain and three roles. Each role works two of the six stations on one screen.
+## (Everything underneath, from the simulation to the robots, still thinks in stations; roles are a layer on top.)
+const ROLES: Dictionary = {
+	"driver": {"name": "Driver", "seats": ["helm", "shields"], "color": "blue", "icon": "helm", "face": "helm", "persona": "Dex Wheelwright",
+		"blurb": "Steers the ship and swings the shield. Keeps Pudding calm."},
+	"stoker": {"name": "Stoker", "seats": ["engines", "weapons"], "color": "orange", "icon": "engines", "face": "engines", "persona": "Big Sal Throttleby",
+		"blurb": "Sets the speed and works the gun. Both make heat."},
+	"tech": {"name": "Tech", "seats": ["sensors", "engineer"], "color": "green", "icon": "engineer", "face": "engineer", "persona": "Gus Spanner",
+		"blurb": "Scans what's out there and fixes what breaks."},
+}
+const CREW: Array = ["captain", "driver", "stoker", "tech"]
+
+static func role_of(seat: String) -> String:
+	## the role a station belongs to ("captain" for the captain, "" for nonsense)
+	if seat == "captain" or ROLES.has(seat):
+		return seat
+	for id in ROLES.keys():
+		if seat in ROLES[id].seats:
+			return id
+	return ""
+
+static func role_seats(id: String) -> Array:
+	## the stations a role (or a station's role) works; the captain is just the captain
+	var r: String = role_of(id)
+	if r == "captain":
+		return ["captain"]
+	return (ROLES[r].seats as Array).duplicate() if ROLES.has(r) else []
+
+static func role_name(id: String) -> String:
+	return "Captain" if id == "captain" else str(ROLES.get(id, {}).get("name", id))
+
+static func role_color(id: String) -> String:
+	return "navy" if id == "captain" else str(ROLES.get(id, {}).get("color", "ink"))
+
+static func role_face(id: String) -> String:
+	## the character for a seat: a role (or any station of it) shows its role's face
+	var r: String = role_of(id)
+	if r == "captain":
+		return "captain"
+	return str(ROLES.get(r, {}).get("face", id))
+
+static func role_persona(id: String) -> String:
+	var r: String = role_of(id)
+	return persona("captain") if r == "captain" else str(ROLES.get(r, {}).get("persona", ""))
+
+static func role_icon(id: String) -> String:
+	return "captain" if id == "captain" else str(ROLES.get(id, {}).get("icon", "crew"))
+
+## a player with a role (two crew stations) sees both on one screen
+static func combined(seats: Array) -> bool:
+	return seats.size() == 2 and str(seats[0]) in STATIONS and str(seats[1]) in STATIONS
+
 const DT: float = 1.0 / 30.0
 const SNAP_HZ: float = 15.0
 const PORT_DEFAULT: int = 7777

@@ -1,0 +1,18 @@
+# Build and run on any machine with Docker:   docker compose up -d --build
+services:
+  yes-captain:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+    image: yes-captain:latest
+    container_name: yes-captain
+    restart: unless-stopped
+    ports:
+      - "8480:80"     # http  (only forwards to https)
+      - "8443:443"    # https (play at https://<server>:8443)
+    environment:
+      PUBLIC_HOST: ""   # e.g. yescaptain.duckdns.org once the router forwards 80 and 443 here
+      LAN_IP: ""        # this machine's LAN address: needed, the game only runs over https
+      MAX_ROOMS: "20"
+    volumes:
+      - ./data:/data    # certificates live here
