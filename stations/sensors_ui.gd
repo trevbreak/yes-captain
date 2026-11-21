@@ -12,6 +12,9 @@ var knob: Knob
 var sig_bar: Gauges.Bar
 var msg_lbl: Label
 var tr_box: VBoxContainer
+var pin_btn: BigButton
+var _pins: Array = []
+var _pin_id: int = -1     # what SHOW CAPTAIN points out: the selected blip, or the goal when nothing is
 var tr_btn: BigButton
 var tr_lbl: Label
 var from_lbl: Label
@@ -27,6 +30,9 @@ func build() -> void:
 	radar = Radar.new()
 	radar.custom_minimum_size = Vector2(450, 450)
 	radar.picked.connect(func(id: int):
+		if id == -1:
+			send("pin", -1)    # tapping the goal shows it to the Captain
+			return
 		_sel = id
 		send("select", id))
 	hero.add_child(radar)
@@ -47,9 +53,17 @@ func build() -> void:
 	keyed(scan_btn, KEY_SPACE)
 	scan_btn.held.connect(func(on: bool): send("scan", on))
 	col.add_child(UIK.center(scan_btn))
+	var nr: HBoxContainer = UIK.hbox(8)
+	col.add_child(nr)
 	var nb: Button = UIK.btn("Next blip", "cream", _cycle, "", 20)
 	nb.custom_minimum_size = Vector2(0, 64)
-	col.add_child(nb)
+	nb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	nr.add_child(nb)
+	# the Captain can only see forwards: pin a blip and it shows on the edge of their window for a while
+	pin_btn = BigButton.new("SHOW CAPTAIN", "mustard", false, 74)
+	keyed(pin_btn, KEY_P)
+	pin_btn.pressed_once.connect(_pin)
+	nr.add_child(pin_btn)
 	# the tractor beam: the same "pick it, hold the button" as scanning
 	tr_box = UIK.vbox(4)
 	col.add_child(tr_box)
@@ -85,7 +99,10 @@ func build() -> void:
 	comms_box.add_child(mp)
 	msg_lbl = UIK.para("...static...", 21)
 	mp.add_child(msg_lbl)
-	keys_lbl.text = "Click a blip (or TAB), then hold SPACE to scan.   Q / E turn the comms dial."
+	keys_lbl.text = "Click a blip (or TAB), then hold SPACE to scan. P shows it to the Captain.   Q / E turn the comms dial."
+
+func _pin() -> void:
+	send("pin", _pin_id)
 
 func _cycle() -> void:
 	if _blips.is_empty():
@@ -133,6 +150,11 @@ func refresh(v: Dictionary, _com: Dictionary) -> void:
 		else:
 			bits += "Hostile!" if bool(b.hostile) else "Not a threat."
 		sel_sub.text = bits
+	_pins = v.get("pins", [])
+	_pin_id = -1 if b.is_empty() else _sel
+	var pinned: bool = _pin_id in _pins
+	pin_btn.set_label("HIDE PIN" if pinned else ("SHOW GOAL" if _pin_id == -1 else "SHOW CAPTAIN"))
+	pin_btn.set_disabled(not bool(v.get("ok", true)))
 	scan_btn.set_progress(float(v.get("prog", 0.0)) if bool(v.get("scanning", false)) else -1.0)
 	scan_btn.set_disabled(not bool(v.get("ok", true)))
 	tr_box.visible = feat("tractor")
@@ -176,6 +198,9 @@ func on_key(k: Key, down: bool) -> bool:
 		KEY_TAB:
 			if down:
 				_cycle()
+			return true
+		KEY_P:
+			pin_btn.press_key(down)
 			return true
 		KEY_Q, KEY_E:
 			if not down and feat("comms"):

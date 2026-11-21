@@ -79,7 +79,7 @@ class DrivingLesson extends Mission:
 		features = Missions.features_upto(1)
 		place = "IGOR's practice yard"
 		par = 240.0
-		story = "Welcome, meat. IGOR is your ship's robot. Today IGOR teaches you to fly, so you do not embarrass IGOR in front of the other robots. The captain sees everything and touches nothing. Everyone else works two controls and sees almost nothing. You must talk. Constantly. It is the only way."
+		story = "Welcome, meat. IGOR is your ship's robot. Today IGOR teaches you to fly, so you do not embarrass IGOR in front of the other robots. The captain looks out of the big window and touches nothing. The Tech's radar sees all round. Everyone else works two controls and sees almost nothing. You must talk. Constantly. It is the only way."
 		new_thing = {"title": "Three crew, two jobs each", "who": ["helm", "shields", "engines", "weapons", "sensors", "engineer"],
 			"text": "The Driver steers (Helm) and points the shield (Shields). The Stoker sets the speed (Engines) and aims and fires (Weapons). The Tech scans (Sensors) and fixes things (Engineer). The Captain tells everyone what to do."}
 
@@ -88,7 +88,7 @@ class DrivingLesson extends Mission:
 		ring(Vector2(420, -820), "b")
 		ring(Vector2(-160, 160), "home", "green")
 		add("Fly through the first ring", {
-			"captain": "Your chart shows the ring. Tell Engines to go and Helm which way to turn.",
+			"captain": "Find the ring out of the window (or ask the Tech). Tell the Stoker to go and the Driver which way to turn.",
 			"helm": "Steer with the wheel. It stays where you leave it. Centre it to fly straight.",
 			"engines": "Push the throttle up to get moving. It stays where you leave it.",
 		}, func(): return passed("a"), Callable(), func(): return pos_of("a"))
@@ -107,7 +107,7 @@ class DrivingLesson extends Mission:
 			w.spawn("target", Vector2(560, -900), {"ai": "none"})
 			w.break_system("sensors", "was loosened by IGOR", false))
 		add("Scan the three buoys to find the practice targets", {
-			"sensors": "Click a blip on your radar, then hold SCAN. The captain's chart will show what it is.",
+			"sensors": "Click a blip on your radar, then hold SCAN. The captain's window will show what it is. SHOW CAPTAIN puts it on their window's edge.",
 			"captain": "The ? marks are unknown. Ask Sensors to scan them.",
 		}, func(): return all_scanned(["target", "buoy"]), Callable(), func(): return pos_of(""))
 		add("Shoot the two practice targets (NOT Bernard!)", {
@@ -117,7 +117,7 @@ class DrivingLesson extends Mission:
 		}, func(): return none_left("target"))
 		add("Incoming junk! Block it with the shield", {
 			"shields": "Turn the shield dial towards the junk. The captain can see it coming; you can't.",
-			"captain": "Watch the chart: junk flies in. Tell Shields where it's coming from.",
+			"captain": "Junk flies in, sometimes from behind. Listen to the Tech, and tell the Driver where to point the shield.",
 			"engineer": "Junk that gets through breaks things. Fix them.",
 		}, func(): return count("junk_done") >= 5, func():
 			counters["junk_done"] = 0
@@ -344,7 +344,7 @@ class BigOne extends Mission:
 		add("Get behind the cruiser and torpedo its back vent (2 hits)", {
 			"weapons": "Hold LOAD, then FIRE TORPEDO when the captain says you're lined up behind it.",
 			"helm": "Swing round BEHIND the cruiser.",
-			"captain": "Your chart shows the weak spot. Get Helm behind it and Weapons lined up.",
+			"captain": "Your window shows the weak spot. Get the Driver behind it and the Stoker lined up.",
 		}, func(): return none_left("cruiser"))
 		add("Escape through the green ring", {"engines": "Full speed!"}, func(): return passed("out"), Callable(), func(): return pos_of("out"))
 

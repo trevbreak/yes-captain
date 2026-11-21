@@ -1,10 +1,33 @@
 class_name Snapshots
 extends RefCounted
-## What each seat is allowed to know. This is the game: the captain sees the big picture, each crew
+## What each seat is allowed to know. This is the game: the captain sees far ahead (not behind), each crew
 ## member sees their own thing in detail, and nobody sees both.
 
 const WEAPON_CONE: float = 0.42   # half-angle of what Weapons sees down the barrel
 const WEAPON_RANGE: float = 560.0
+# the Captain's bridge window: wide and far-sighted, but only forwards. The Tech's radar sees the rest.
+const WINDOW_HALF: float = deg_to_rad(55.0)
+const WINDOW_RANGE: float = 1300.0
+const NEAR_RING: float = 140.0     # close enough to hear it bump the hull: seen all round
+
+static func rel_of(w: World, p: Vector2) -> float:
+	## bearing of p from the nose, -PI..PI (0 = dead ahead, + = to the right)
+	return K.wrap_pi((p - w.ship.pos).angle() - w.ship.heading)
+
+static func win_range(w: World) -> float:
+	## fog cuts the window down as much as the radar
+	return WINDOW_RANGE * w.radar_range / World.RADAR_RANGE
+
+static func in_window(w: World, p: Vector2, r: float = 0.0) -> bool:
+	var d: float = p.distance_to(w.ship.pos)
+	if d <= NEAR_RING + r:
+		return true
+	if d > win_range(w) + r:
+		return false
+	return absf(rel_of(w, p)) <= WINDOW_HALF + asin(clampf(r / maxf(d, 1.0), 0.0, 1.0))
+
+static func captain_sees(w: World, e: Dictionary) -> bool:
+	return in_window(w, e.pos, float(e.r)) or w.pins_live().has(int(e.id))
 
 static func _v(p: Vector2) -> Array:
 	return [snappedf(p.x, 0.1), snappedf(p.y, 0.1)]
@@ -112,13 +135,27 @@ static func sensors(w: World) -> Dictionary:
 		if to.length() > w.radar_range:
 			continue
 		blips.append({"id": e.id, "x": snappedf(to.x, 0.1), "y": snappedf(to.y, 0.1), "kind": _kind(e), "name": _name(e),
-			"scanned": e.scanned, "hostile": e.hostile and e.scanned, "weak": e.weak_known, "dist": snappedf(to.length(), 0.1)})
+			"scanned": e.scanned, "hostile": e.hostile and e.scanned, "weak": e.weak_known, "dist": snappedf(to.length(), 0.1),
+			"charge": float(e.charge) > 0.0, "seen": in_window(w, e.pos, float(e.r))})
+	var up: float = -s.heading - PI / 2.0
+	var shots: Array = []
+	var goal: Array = []
+	if ok:
+		for sh in w.shots:
+			if sh.from == "them" and sh.pos.distance_to(s.pos) < w.radar_range:
+				var sp: Vector2 = (sh.pos - s.pos).rotated(up)
+				shots.append([snappedf(sp.x, 0.1), snappedf(sp.y, 0.1)])
+		var gp: Variant = w.mission.goal_pos() if w.mission != null else null
+		if gp is Vector2:
+			var g: Vector2 = ((gp as Vector2) - s.pos).rotated(up)
+			goal = [snappedf(g.x, 0.1), snappedf(g.y, 0.1)]
 	var comms: Dictionary = {}
 	if w.feat("comms") and not w.hail.is_empty():
 		comms = {"from": w.hail.from, "signal": snappedf(float(w.hail.get("signal", 0.0)), 0.01), "lock": snappedf(float(w.hail.lock_t), 0.01),
 			"heard": w.hail.heard, "text": str(w.hail.text) if w.hail.heard else ""}
 	return {"ok": ok, "range": w.radar_range, "blips": blips if ok else [], "selected": w.scan_target, "scanning": w.scanning,
-		"prog": snappedf(w.scan_prog, 0.01), "freq": w.comms_freq, "comms": comms, "tractor": _tractor(w)}
+		"prog": snappedf(w.scan_prog, 0.01), "freq": w.comms_freq, "comms": comms, "tractor": _tractor(w),
+		"shots": shots, "goal": goal, "pins": w.pins_live().keys(), "window": WINDOW_HALF, "window_range": win_range(w)}
 
 static func shields(w: World) -> Dictionary:
 	var s: Ship = w.ship
@@ -158,8 +195,9 @@ static func captain(w: World) -> Dictionary:
 	var s: Ship = w.ship
 	var m: Mission = w.mission
 	var ents: Array = []
+	var pins: Dictionary = w.pins_live()
 	for e in w.ents:
-		if not e.alive or e.ai == "thrown" and false:
+		if not e.alive or not (in_window(w, e.pos, float(e.r)) or e.latched):
 			continue
 		ents.append({"id": e.id, "kind": _kind(e) if e.kind != "ring" else "ring", "name": _name(e), "pos": _v(e.pos),
 			"heading": snappedf(float(e.heading), 0.01), "hostile": e.hostile and e.scanned, "note": e.note, "tag": e.tag,
@@ -167,17 +205,42 @@ static func captain(w: World) -> Dictionary:
 			"thrown": e.ai == "thrown", "hp": snappedf(e.hp / maxf(1.0, e.hp_max), 0.01)})
 	var shots: Array = []
 	for sh in w.shots:
-		shots.append({"pos": _v(sh.pos), "from": sh.from, "kind": sh.kind, "dir": snappedf(sh.vel.angle(), 0.01)})
+		if in_window(w, sh.pos):
+			shots.append({"pos": _v(sh.pos), "from": sh.from, "kind": sh.kind, "dir": snappedf(sh.vel.angle(), 0.01)})
+	# what the Tech has pointed out: the window shows a marker on its edge for anything outside it
+	var marks: Array = []
+	for id in pins:
+		var p: Variant = null
+		var info: Dictionary = {"id": id, "left": snappedf(float(pins[id]), 0.1)}
+		if id == -1:
+			p = m.goal_pos() if m != null else null
+			info.merge({"name": "Goal", "kind": "goal", "hostile": false, "charge": 0.0})
+		else:
+			var pe: Dictionary = w.ent(id)
+			p = pe.pos
+			info.merge({"name": _name(pe), "kind": _kind(pe), "hostile": pe.hostile and pe.scanned, "charge": snappedf(float(pe.charge), 0.01)})
+		if p is Vector2:
+			info["rel"] = snappedf(rel_of(w, p), 0.001)
+			info["dist"] = snappedf((p as Vector2).distance_to(s.pos), 1.0)
+			info["pos"] = _v(p)
+			info["seen"] = in_window(w, p)
+			marks.append(info)
 	var systems: Dictionary = {}
 	for id in Ship.SYSTEMS:
 		systems[id] = {"state": str(s.sys[id].state), "hp": snappedf(float(s.sys[id].hp), 0.1)}
 	var gp: Variant = m.goal_pos() if m != null else null
+	if gp != null and not in_window(w, gp):
+		gp = null    # out of the window: the Tech has to say where it is
+	var steps: Array = m.step_list() if m != null else []
+	for st in steps:
+		st.erase("pos")
 	return {
 		"ship": {"pos": _v(s.pos), "heading": snappedf(s.heading, 0.001), "vel": _v(s.vel), "speed": snappedf(s.speed(), 0.1),
 			"shield": s.shield_dir, "shield_ok": s.ok("shield"), "aim": s.aim, "tractor": s.tractor_target, "rolling": s.roll_t > 0.0},
 		"ents": ents, "shots": shots, "fx": w.fx.duplicate(), "_t": w.t, "_feat_tractor": w.feat("tractor"),
-		"goal": _v(gp) if gp != null else [],
-		"steps": m.step_list() if m != null else [],
+		"goal": _v(gp) if gp != null else [], "pins": marks,
+		"window": {"half": WINDOW_HALF, "range": win_range(w), "near": NEAR_RING},
+		"steps": steps,
 		"board": {"systems": systems, "engine_heat": snappedf(s.engine_heat, 0.1), "gun_heat": snappedf(s.gun_heat, 0.1),
 			"overload": snappedf(s.overload, 0.1), "draw": snappedf(s.draw, 0.01), "cap": s.power_cap, "blackout": s.blackout_t > 0.0,
 			"pud_mood": snappedf(s.pud_mood, 0.1), "pud_out": s.pud_out, "pud_room": s.pud_room, "torp": s.torp,
@@ -339,12 +402,12 @@ static func forecasts(w: World) -> Array:
 	var inc: Array = w.incoming()
 	var worst: Dictionary = {}
 	for i in inc:
-		if not i.covered and (worst.is_empty() or i.eta < worst.eta):
+		if not i.covered and i.seen and (worst.is_empty() or i.eta < worst.eta):
 			worst = i
 	if not worst.is_empty():
 		out.append({"text": "Incoming from %d o'clock! Shield is at %d" % [K.clock(worst.rel), K.clock(s.shield_dir)], "level": 3, "who": "shields"})
 	for e in w.ents:
-		if e.alive and float(e.charge) > 0.0 and e.ai in ["patrol", "cruiser"]:
+		if e.alive and float(e.charge) > 0.0 and e.ai in ["patrol", "cruiser"] and captain_sees(w, e):
 			var rel: float = K.wrap_pi((e.pos - s.pos).angle() - s.heading)
 			out.append({"text": "%s charging at %d o'clock!%s" % [_name(e), K.clock(rel), " ROLL!" if w.feat("roll") else ""], "level": 3,
 				"who": "helm" if w.feat("roll") else "shields"})
@@ -375,7 +438,7 @@ static func forecasts(w: World) -> Array:
 	if s.hull < 35.0:
 		out.append({"text": "Hull critical: %d%%" % int(s.hull), "level": 2, "who": ""})
 	for e2 in w.ents:
-		if e2.alive and e2.kind == "mine" and e2.scanned and e2.pos.distance_to(s.pos) < 170.0:
+		if e2.alive and e2.kind == "mine" and e2.scanned and e2.pos.distance_to(s.pos) < 170.0 and captain_sees(w, e2):
 			var rel2: float = K.wrap_pi((e2.pos - s.pos).angle() - s.heading)
 			out.append({"text": "Mine close at %d o'clock!" % K.clock(rel2), "level": 2, "who": "helm"})
 	if w.feat("comms") and not w.hail.is_empty() and not w.hail.heard:

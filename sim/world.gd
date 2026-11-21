@@ -2,7 +2,8 @@ class_name World
 extends RefCounted
 ## The 2D simulation. Pure rules, no nodes. The mission switches mechanics on through `features`.
 
-const RADAR_RANGE: float = 520.0
+const RADAR_RANGE: float = 1250.0   # the Tech sees all round, and far: much further than the Captain's window
+const DRONE_CHARGE: float = 2.2
 const SHIP_R: float = 20.0
 const BULLET_SPEED: float = 640.0     # our laser bolts: quick, straight, and gone after about a radar-width
 const TRACTOR_RANGE: float = 150.0
@@ -35,6 +36,7 @@ var bump_cd: float = 0.0
 # glitches: the ship misbehaving (see Glitches)
 var glitches: Array = []          # {id, sys, station, t, ask, fix, ...}
 var radar_range: float = RADAR_RANGE
+var pins: Dictionary = {}         # what the Tech has pointed out to the Captain: ent id (or -1, the goal) -> pinned until t
 var next_ghost: int = 900001
 
 func _init(seed_value: int = 0) -> void:
@@ -57,6 +59,7 @@ func clear() -> void:
 	scanning = false
 	scan_prog = 0.0
 	hail = {}
+	pins = {}
 	shake_t = 0.0
 	glitches.clear()
 
@@ -128,6 +131,46 @@ func kill(e: Dictionary, why: String = "destroyed") -> void:
 	e.alive = false
 	add_fx("puff", e.pos, {"size": e.r})
 	emit("ent_" + why, {"id": e.id, "kind": e.kind, "name": e.name, "tag": e.tag})
+
+const PIN_TIME: float = 15.0
+const MAX_PINS: int = 3
+
+func pin(id: int) -> void:
+	## the Tech points something out to the Captain (tap again to take it down). -1 is the goal.
+	if pins.has(id):
+		pins.erase(id)
+		return
+	if not ship.ok("sensors"):
+		return
+	if id != -1:
+		var e: Dictionary = ent(id)
+		if e.is_empty() or not e.alive or e.pos.distance_to(ship.pos) > radar_range:
+			return
+	elif mission == null or mission.goal_pos() == null:
+		return
+	pins[id] = t + PIN_TIME
+	while pins.size() > MAX_PINS:
+		var oldest: int = pins.keys()[0]
+		for k in pins:
+			if float(pins[k]) < float(pins[oldest]):
+				oldest = k
+		pins.erase(oldest)
+	emit("pinned", {"id": id})
+
+func pins_live() -> Dictionary:
+	## the pins still up: id -> seconds left
+	var out: Dictionary = {}
+	for k in pins.keys():
+		var left: float = float(pins[k]) - t
+		var gone: bool = left <= 0.0
+		if not gone and int(k) != -1:
+			var e: Dictionary = ent(int(k))
+			gone = e.is_empty() or not e.alive
+		if gone:
+			pins.erase(k)
+		else:
+			out[int(k)] = left
+	return out
 
 func shoot_at_ship(from: Vector2, speed: float = 130.0, dmg: float = 10.0, kind: String = "blob", spread: float = 0.0) -> void:
 	var dir: Vector2 = (ship.pos - from).normalized().rotated(spread)
@@ -412,9 +455,19 @@ func _ai_drone(e: Dictionary, dt: float) -> void:
 	e.vel = e.vel.lerp(want.limit_length(80.0), 1.0 - exp(-1.2 * dt))
 	e.pos += e.vel * dt
 	e.cd = float(e.cd) - dt
-	if e.cd <= 0.0 and d < 480.0 and e.stun <= 0.0:
-		e.cd = rng.randf_range(3.6, 5.2) * calm()
-		shoot_at_ship(e.pos, 140.0, 8.0)
+	# drones glow for a couple of seconds, then fire three together: one call, one shield move
+	if e.cd <= 0.0 and e.charge <= 0.0 and d < 480.0 and e.stun <= 0.0:
+		e.charge = DRONE_CHARGE
+		emit("charging", {"id": e.id})
+	if e.charge > 0.0:
+		e.charge = float(e.charge) - dt
+		if e.stun > 0.0:
+			e.charge = 0.0
+			e.cd = 1.5
+		elif e.charge <= 0.0:
+			e.cd = rng.randf_range(9.5, 11.5) * calm()
+			for k in [-0.05, 0.0, 0.05]:
+				shoot_at_ship(e.pos, 140.0, 6.0, "blob", k)
 
 func _ai_patrol(e: Dictionary, dt: float) -> void:
 	var s: Ship = ship
@@ -888,7 +941,7 @@ func engine_heat_eta() -> float:
 	return (100.0 - s.engine_heat) / hot
 
 func incoming() -> Array:
-	## enemy shots that will reach us in the next ~3 seconds: [{rel, eta, covered}]
+	## enemy shots that will reach us in the next ~3 seconds: [{rel, eta, covered, seen}] (seen: through the Captain's window)
 	var out: Array = []
 	var s: Ship = ship
 	for sh in shots:
@@ -901,12 +954,16 @@ func incoming() -> Array:
 		var eta: float = to.length() / closing
 		if eta < 3.0:
 			var from_dir: float = (sh.pos - s.pos).angle()
-			out.append({"rel": K.wrap_pi(from_dir - s.heading), "eta": eta, "covered": s.shield_covers(from_dir)})
+			var rel: float = K.wrap_pi(from_dir - s.heading)
+			out.append({"rel": rel, "eta": eta, "covered": s.shield_covers(from_dir),
+				"seen": absf(rel) <= Snapshots.WINDOW_HALF or to.length() <= Snapshots.NEAR_RING})
 	for e in ents:
 		if e.alive and e.ai == "thrown":
 			var to2: Vector2 = s.pos - e.pos
 			var cl: float = e.vel.dot(to2.normalized())
 			if cl > 0.0 and to2.length() / cl < 4.0:
 				var fd: float = (e.pos - s.pos).angle()
-				out.append({"rel": K.wrap_pi(fd - s.heading), "eta": to2.length() / cl, "covered": s.shield_covers(fd)})
+				var rel2: float = K.wrap_pi(fd - s.heading)
+				out.append({"rel": rel2, "eta": to2.length() / cl, "covered": s.shield_covers(fd),
+					"seen": absf(rel2) <= Snapshots.WINDOW_HALF or to2.length() <= Snapshots.NEAR_RING})
 	return out

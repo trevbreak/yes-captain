@@ -47,7 +47,7 @@ const PLACES: Dictionary = {
 	"rocks": {"name": "The Rock Belt", "text": "Rocks. They do not move. You do. Go round.", "danger": 1},
 	"shower": {"name": "Meteor Alley", "text": "Meteors arrive without warning. The captain sees them coming. Shields does not.", "danger": 1},
 	"mines": {"name": "The Minefield", "text": "Old mines. They look like every other ? until Sensors scans them.", "danger": 2},
-	"fog": {"name": "The Soup", "text": "Space fog. The radar only reaches half as far. The captain's chart has the same problem.", "danger": 1},
+	"fog": {"name": "The Soup", "text": "Space fog. The radar only reaches half as far. The captain's window has the same problem.", "danger": 1},
 	"junkyard": {"name": "The Junkyard", "text": "Cargo pods float about. Each one hauled in is a bonus. Each one is also a detour.", "danger": 0},
 }
 
@@ -58,7 +58,7 @@ const TWISTS: Dictionary = {
 	"fragile": {"name": "Fragile cargo", "text": "Every bump and every hit comes out of the pay.", "pay": 0.3, "danger": 1},
 	"glitchy": {"name": "Friday-afternoon ship", "text": "Glitches arrive twice as often.", "pay": 0.3, "danger": 2},
 	"grumpy": {"name": "Pudding is in a mood", "text": "Pudding starts unhappy and gets unhappier. Somebody keep petting.", "pay": 0.2, "danger": 1},
-	"blind": {"name": "Sensor dish fell off", "text": "Sensors start broken. The chart is all question marks until it's mended.", "pay": 0.15, "danger": 1},
+	"blind": {"name": "Sensor dish fell off", "text": "Sensors start broken. The captain's window is all question marks until it's mended.", "pay": 0.15, "danger": 1},
 	"weak_reactor": {"name": "Reactor is wheezing", "text": "Only 5 bars of power instead of 6.", "pay": 0.25, "danger": 1},
 	"thrupp": {"name": "Thrupp is watching", "text": "A Hegemony patrol follows you the whole way. It can't be shot.", "pay": 0.4, "danger": 2},
 }

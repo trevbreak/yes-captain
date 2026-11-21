@@ -12,7 +12,7 @@ const ROLES: Dictionary = {
 	"stoker": {"name": "Stoker", "seats": ["engines", "weapons"], "color": "orange", "icon": "engines", "face": "engines", "persona": "Big Sal Throttleby",
 		"blurb": "Sets the speed and works the gun. Both make heat."},
 	"tech": {"name": "Tech", "seats": ["sensors", "engineer"], "color": "green", "icon": "engineer", "face": "engineer", "persona": "Gus Spanner",
-		"blurb": "Scans what's out there and fixes what breaks."},
+		"blurb": "Sees all round on the radar, scans it, and fixes what breaks."},
 }
 const CREW: Array = ["captain", "driver", "stoker", "tech"]
 
@@ -63,7 +63,7 @@ const PORT_DEFAULT: int = 7777
 const SEAT_INFO: Dictionary = {
 	"captain": {"name": "Captain", "color": "navy", "icon": "captain", "animal": "walrus",
 		"persona": "Captain Mo Pennywhistle", "trait": "Has never once touched a button. Very proud of this.",
-		"job": "You see the whole picture: the chart, the goals, the ship and the crew. You touch nothing. Talk!"},
+		"job": "You look out of the bridge window: far ahead, but nothing behind. The Tech's radar sees all round. You touch nothing. Talk!"},
 	"helm": {"name": "Helm", "color": "blue", "icon": "helm", "animal": "duck",
 		"persona": "Dex Wheelwright", "trait": "Turns left to go right. Usually.",
 		"job": "Steer with the wheel. You only see a compass, so listen to the captain."},
@@ -75,7 +75,7 @@ const SEAT_INFO: Dictionary = {
 		"job": "Turn the turret and fire. You only see down the barrel, so ask where to aim."},
 	"sensors": {"name": "Sensors", "color": "green", "icon": "sensors", "animal": "owl",
 		"persona": "Ozzy Squint", "trait": "Can hear a mine blink.",
-		"job": "Click blips on the radar and hold SCAN to find out what they are. The captain sees what you find."},
+		"job": "Your radar sees all round and further than the captain. Hold SCAN on blips, and SHOW CAPTAIN what's behind."},
 	"shields": {"name": "Shields", "color": "purple", "icon": "shields", "animal": "turtle",
 		"persona": "Nana Fluffington", "trait": "Carries snacks for every occasion.",
 		"job": "Turn the shield to face the danger. You can't see what's coming, so listen for where."},

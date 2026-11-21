@@ -442,9 +442,10 @@ func _captainshots() -> void:
 	await _play(str(args.get("mission", "lesson")), 0.5)
 	Net.send("active", {"seat": "captain"})
 	var t0: int = Time.get_ticks_msec()
-	while Time.get_ticks_msec() - t0 < 60000 and (Net.host.mission == null or Net.host.mission.step < 2):
+	var at: int = int(args.get("atstep", 2))
+	while Time.get_ticks_msec() - t0 < 90000 and (Net.host.mission == null or Net.host.mission.step < at):
 		await _wait(0.1)
-	await _wait(0.6)
+	await _wait(float(args.get("after", 0.6)))
 	await _shot("cap_a_tick")
 	await _wait(4.5)
 	await _shot("cap_b_faded")
@@ -493,10 +494,13 @@ func _readmeshots() -> void:
 	# the Captain's bridge, at a moment with something to shout about
 	Net.send("release_all")
 	Net.send("claim", {"seat": "captain"})
+	# best: the Tech has pinned something outside the window, so its marker is on the glass's edge
 	var t0: int = Time.get_ticks_msec()
-	while Time.get_ticks_msec() - t0 < 8000:
-		var warns: Array = Snapshots.forecasts(Net.host.world)
-		if not warns.is_empty() and int(warns[0].level) >= 2:
+	while Time.get_ticks_msec() - t0 < 20000:
+		var pinned: bool = false
+		for pm in Snapshots.captain(Net.host.world).pins:
+			pinned = pinned or not bool(pm.seen)
+		if pinned:
 			break
 		await _wait(0.1)
 	await _wait(0.6)

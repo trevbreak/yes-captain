@@ -10,7 +10,7 @@ const ACTIONS: Dictionary = {
 	"shields": [[KEY_Q, "Shield anticlockwise"], [KEY_E, "Shield clockwise"], [KEY_P, "Pet Pudding"], [KEY_C, "Shake the tin"], [KEY_N, "Snack"]],
 	"engines": [[KEY_W, "Throttle up"], [KEY_S, "Throttle down"], [KEY_X, "All stop"], [KEY_B, "Boost"]],
 	"weapons": [[KEY_A, "Turret left"], [KEY_D, "Turret right"], [KEY_SPACE, "Fire"], [KEY_L, "Load torpedo"], [KEY_T, "Fire torpedo"]],
-	"sensors": [[KEY_SPACE, "Scan"], [KEY_TAB, "Next blip"], [KEY_T, "Tractor beam"], [KEY_Q, "Tune down"], [KEY_E, "Tune up"]],
+	"sensors": [[KEY_SPACE, "Scan"], [KEY_TAB, "Next blip"], [KEY_T, "Tractor beam"], [KEY_P, "Show the Captain"], [KEY_Q, "Tune down"], [KEY_E, "Tune up"]],
 	"engineer": [[KEY_R, "Repair"]],
 }
 

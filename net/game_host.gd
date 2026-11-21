@@ -980,6 +980,13 @@ func _on_world_event(type: String, d: Dictionary) -> void:
 			_event(0, {"t": "fx", "fx": "hit"})
 		"scanned":
 			_event(0, {"t": "toast", "text": "Scanned: %s" % str(d.get("name", "?")), "kind": "info", "who": "sensors"})
+		"pinned":
+			# the Tech points something out: a ping and a note, so the Captain looks at the window's edge
+			var pid: int = int(d.get("id", -1))
+			var pp: Variant = world.mission.goal_pos() if pid == -1 and world.mission != null else world.ent(pid).get("pos", null)
+			if pp is Vector2 and not Snapshots.in_window(world, pp):
+				var pn: String = "the goal" if pid == -1 else str(Snapshots._name(world.ent(pid)))
+				_event(0, {"t": "toast", "text": "Tech: %s at %d o'clock!" % [pn, K.clock(Snapshots.rel_of(world, pp))], "kind": "info", "who": "sensors"})
 		"ghost_scanned":
 			_igor("ghost", {"who": _who("sensors")}, 2)
 		"weak_found":

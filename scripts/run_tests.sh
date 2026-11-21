@@ -36,6 +36,7 @@ if command -v swift >/dev/null 2>&1; then
 fi
 run "IGOR's voice service"                      "$GODOT" --headless --path . --script tests/t_tts.gd
 run "practice: IGOR captains a lone crew member"  "$GODOT" --headless --path . --script tests/t_captain.gd
+run "bridge window, radar, pins and volleys"  "$GODOT" --headless --path . --script tests/t_window.gd
 run "a whole shift, and the glitch plumbing"  "$GODOT" --headless --path . --script tests/t_shift.gd
 [ -z "$NONET" ] && run "server: rooms, secrecy, limits, rubbish"  "$GODOT" --headless --path . --script tests/t_hub.gd
 run "UI smoke: every seat in a mission"     "$GODOT" --headless --path . scenes/main.tscn -- --solo --autotest=haven --warm=1 --wait=0.3 --tail=0.5

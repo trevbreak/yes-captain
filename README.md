@@ -3,11 +3,11 @@
 A **bridge simulator for four loud friends**, in a hand-inked 1930s cartoon style. Played in the browser on
 phones and laptops, hosted from one Docker container.
 
-> The captain sees everything and touches nothing.
+> The captain sees far ahead and touches nothing. The Tech sees all round.
 > Everyone else works two controls and sees almost nothing.
 > The only way to fly is to talk. Constantly.
 
-![The captain's screen: the chart, the mission, and a console for each crew role](docs/screenshots/06_captain.jpg)
+![The captain's screen: the bridge window, a pinned contact on its edge, and a console for each crew role](docs/screenshots/06_captain.jpg)
 
 You're the crew of a garbage hauler from the Free Lanes. On bin day you collect a skip and find **Pudding**
 inside: the beloved pet of the Hegemony's Overlord. Now the whole Hegemony fleet wants Pudding back, the ship's
@@ -37,9 +37,13 @@ Built with **Godot 4.7** (GDScript only, Compatibility renderer).
 
 The fun lives in the gap between two kinds of knowledge:
 
-- **The Captain** has the big picture and no controls at all: a chart of everything around the ship, the goal,
-  a console for each crew role showing who's at it and what their instruments say, and **forecasts** such as
-  *"Reactor overload in 5s"*.
+- **The Captain** has no controls at all. They look out of the **bridge window**: about 110 degrees wide and
+  1.3 km deep, but **nothing to the sides or behind** (bar a small close-range ring for things about to bump
+  the hull). Under it, a console for each crew role showing who's at it and what their instruments say, and
+  **forecasts** such as *"Reactor overload in 5s"*.
+- **The Tech's radar sees all round, and further.** When something is sneaking up behind, the Tech taps it and
+  presses **SHOW CAPTAIN**: a marker appears on the edge of the Captain's window (*"DRONE · 5 o'clock · 400m"*)
+  for 15 seconds. Tap the goal on the radar to show the Captain which way to go.
 - **The crew** each see their own desk in depth and nothing else. The Driver only has a compass. The Stoker only
   sees down the gun barrel and can't see where the ship is going. The server only sends each player what their
   seat may know.
@@ -51,6 +55,7 @@ desk as the wheel, the gun or the shield), and so the crew still need **each oth
 |---|---|
 | The ship turns tighter when it's slow | Driver and Stoker |
 | Turning the ship moves where the danger is | Driver (wheel) and Driver (shield): one shout, two jobs |
+| The Captain only sees ahead; the radar sees all round | Tech and Captain: "drones behind us, 5 o'clock!" |
 | Scanned enemies get an aiming mark in the gun scope | Tech and Stoker |
 | A part mends twice as fast while nobody is using it | Tech and whoever is using it |
 | A glitch fix needs someone else to do something while the Tech holds REPAIR | Always a third role |
@@ -59,10 +64,10 @@ desk as the wheel, the gun or the shield), and so the crew still need **each oth
 
 | Seat | Character | Works | Desk |
 |---|---|---|---|
-| **Captain** | Captain Mo Pennywhistle (walrus) | Nothing. Voice only. | The chart and four consoles |
+| **Captain** | Captain Mo Pennywhistle (walrus) | Nothing. Voice only. | The bridge window and four consoles |
 | **Driver** | Dex Wheelwright (duck) | Helm + Shields | Hold LEFT / RIGHT to turn, compass, drag the shield dial; barrel roll; keep Pudding calm |
 | **Stoker** | Big Sal Throttleby (bulldog) | Engines + Weapons | Throttle and heat on the left, gun scope, turret dial and FIRE on the right; boost, reactor power, torpedoes |
-| **Tech** | Gus Spanner (raccoon) | Sensors + Engineer | Radar: pick a blip, hold SCAN or PULL (tractor beam); ship plan: pick a room, hold REPAIR; IGOR's manual |
+| **Tech** | Gus Spanner (raccoon) | Sensors + Engineer | Radar (all round, long range): pick a blip, hold SCAN or PULL (tractor beam), SHOW CAPTAIN; ship plan: pick a room, hold REPAIR; IGOR's manual |
 
 | | | |
 |---|---|---|
@@ -116,10 +121,10 @@ Online rooms open on **the Shift**: three jobs, and rent to make.
 
 - **Jobs are dealt, not written:** a task x a place (rock belt, minefield, fog...) x one or two snags (rush order,
   second-hand ship, Thrupp is watching...). The crew votes on the job board; the Captain picks. Safer jobs pay less.
-- **A director drops trouble in as you fly:** drones, meteors, stray cargo worth a bonus. It waits until the crew
+- **A director drops trouble in as you fly:** drones (they glow for two seconds, then fire three shots at once), meteors, stray cargo worth a bonus. It waits until the crew
   is clear of the last lot, so there's time to spot it, say it and do it.
 - **Glitches.** The ship stops behaving and nobody is told what: the wheel is on backwards, the compass is drunk,
-  the Captain's chart turns upside down. The Tech finds the room marked **?!** and reads **IGOR's manual** out
+  the Captain's window turns upside down. The Tech finds the room marked **?!** and reads **IGOR's manual** out
   loud; the fix always needs a crew member in *another* role to do something with their own control while the
   Tech holds REPAIR.
 - **IGOR found a part:** between jobs, fit one bodged upgrade with a catch (*bigger engine, runs hot*).
@@ -128,7 +133,7 @@ Online rooms open on **the Shift**: three jobs, and rent to make.
 
 | | |
 |---|---|
-| ![The Tech reads IGOR's manual](docs/screenshots/08_glitch_manual.jpg) | ![The chart's upside down](docs/screenshots/09_upside_down_chart.jpg) |
+| ![The Tech reads IGOR's manual](docs/screenshots/08_glitch_manual.jpg) | ![The window's upside down](docs/screenshots/09_upside_down_chart.jpg) |
 | ![The Stoker's short briefing](docs/screenshots/05_briefing.jpg) | ![End of shift](docs/screenshots/11_shift_end.jpg) |
 
 ## Run it
@@ -169,7 +174,7 @@ Every desk works with mouse or touch; keys are there for laptop players. **Rebin
 | Any | **Esc** or **`** menu, **M** mute |
 | Driver | **A / D** (or arrows) hold to turn, **R** barrel roll, **Q / E** swing the shield, **P** pet Pudding, **C** shake the tin, **N** snack |
 | Stoker | **W / S** throttle, **X** all stop, **B** boost, **A / D** turn the turret, **Space** fire, **L** load torpedo, **T** fire torpedo |
-| Tech | **Tab** next blip, **Space** scan, **T** tractor beam, **Q / E** comms dial, **R** repair (click a room first) |
+| Tech | **Tab** next blip, **Space** scan, **T** tractor beam, **P** show the Captain, **Q / E** comms dial, **R** repair (click a room first) |
 
 ## Project layout
 

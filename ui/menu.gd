@@ -22,7 +22,7 @@ var _igor_i: int = 0
 
 const QUIPS: Array = [
 	"IGOR welcomes you. IGOR has low expectations. Please meet them.",
-	"The captain sees everything and touches nothing. Like IGOR's manager.",
+	"The captain sees far ahead and touches nothing. Like IGOR's manager.",
 	"One control each. Talk constantly. IGOR will be listening. And judging.",
 	"Pudding says hello. Pudding cannot talk. IGOR is translating. Loosely.",
 	"IGOR ran simulation of this crew. Simulation asked to be turned off.",

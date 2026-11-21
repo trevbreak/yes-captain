@@ -1,16 +1,17 @@
 class_name CaptainUI
 extends Control
-## The Captain's bridge, made to be put on a TV. The chart fills a big viewscreen: where everything is, the mission
-## as numbered flags along the route, trouble pinned where it is. Under it sits a row of consoles, one per crew
-## role (Driver, Stoker, Tech), each with the two instruments that show what that role knows and the chart
-## doesn't (the wheel, the shield; the throttle and heat, the gun; the scan, the repair), and the ship's hull.
+## The Captain's bridge, made to be put on a TV. A big bridge window fills the top: a wide, far view of what's
+## ahead, but nothing to the sides or behind (the Tech's radar sees all round, and pins things to the window's
+## edge). Under it sits a row of consoles, one per crew role (Driver, Stoker, Tech), each with the two instruments
+## that show what that role knows (the wheel, the shield; the throttle and heat, the gun; the scan, the repair),
+## and the ship's hull.
 ## The captain touches NOTHING: they look, and they shout.
 
 signal menu_pressed
 
 const CONSOLES: Array = ["driver", "stoker", "tech", "ship"]
 
-var chart: Chart
+var chart: BridgeWindow
 var screen: Control
 var plaque_title: Label
 var plaque_time: Label
@@ -79,13 +80,12 @@ func _build_screen() -> void:
 	ring.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	screen.add_child(ring)
 	var mask: Panel = Panel.new()
-	mask.add_theme_stylebox_override("panel", _box(Chart.bg_color(), Chart.bg_color(), 0, 32))
+	mask.add_theme_stylebox_override("panel", _box(BridgeWindow.SKY_TOP, BridgeWindow.SKY_TOP, 0, 32))
 	mask.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mask.clip_children = CanvasItem.CLIP_CHILDREN_ONLY
 	mask.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	screen.add_child(mask)
-	chart = Chart.new()
-	chart.big = true
+	chart = BridgeWindow.new()
 	chart.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mask.add_child(chart)
 	var bezel: Panel = Panel.new()
@@ -252,7 +252,7 @@ func apply(v: Dictionary, com: Dictionary) -> void:
 	var feats: Dictionary = com.get("features", {})
 	v["_t"] = float(com.get("t", 0.0))
 	chart.v = v
-	# the "chart's upside down" glitch really does turn the chart upside down, lettering and all
+	# the "chart's upside down" glitch really does turn the window's picture upside down, lettering and all
 	var flip: bool = bool(v.get("flip", false))
 	chart.pivot_offset = chart.size / 2.0
 	if flip != _flip:
