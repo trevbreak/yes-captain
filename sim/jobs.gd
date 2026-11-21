@@ -303,7 +303,7 @@ class Job extends Mission:
 
 	func _task_pest() -> void:
 		add("Scan the drones, then shoot all of them (wave 1)", {
-			"sensors": "Scan each new blip: the captain's chart names it, and Weapons gets an aiming mark.",
+			"sensors": "Scan each new blip: the captain's window names it, and Weapons gets an aiming mark.",
 			"weapons": "Aim where the captain says. Scanned drones show a diamond: put the crosshair on it.",
 			"shields": "Drones shoot back. Shield towards them."},
 			func(): return count("killed_drone") >= 2, func():

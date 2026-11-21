@@ -57,6 +57,8 @@ static func apply(w: World, station: String, key: String, val: Variant, raw: boo
 					w.scanning = bool(val)
 				"tractor":
 					s.tractor_on = bool(val) and w.feat("tractor")
+				"pin":
+					w.pin(int(val))
 				"freq":
 					if w.feat("comms"):
 						w.comms_freq = clampf(float(val), 0.0, 1.0)

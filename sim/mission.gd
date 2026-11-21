@@ -28,7 +28,7 @@ const BASE_FEATURES: Dictionary = {"damage": true}
 
 ## what each seat can usefully be doing when a step has nothing special for them: nobody just waits
 const STANDING: Dictionary = {
-	"captain": "Watch the chart and the ship board. Say what you see, and who should do what.",
+	"captain": "Watch the window and the ship board. Ask the Tech what's behind. Say who should do what.",
 	"helm": "Hold the course the captain gave you. Remember: the ship turns tighter when it's slow.",
 	"engines": "Keep the speed where the captain wants it. Ease off for sharp turns; Helm will thank you.",
 	"weapons": "Sweep the turret round and call out anything you see down the barrel.",

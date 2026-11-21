@@ -9,6 +9,9 @@ var rng: RandomNumberGenerator = RandomNumberGenerator.new()
 var spin_t: float = 0.0
 var aim_jitter: float = 0.0
 
+## > 1 slows the robots' reactions (tools/loop_probe.gd uses it to stand in for a crew that has to talk first)
+static var think_scale: float = 1.0
+
 func _init(st: String) -> void:
 	station = st
 	rng.randomize()
@@ -17,7 +20,7 @@ func tick(w: World, dt: float) -> void:
 	think_t -= dt
 	if think_t > 0.0:
 		return
-	think_t = rng.randf_range(0.14, 0.2)
+	think_t = rng.randf_range(0.14, 0.2) * think_scale
 	if _help_engineer(w):
 		return
 	match station:
@@ -327,6 +330,7 @@ func _sensors(w: World) -> void:
 			act(w, "select", int(ce.id))
 			act(w, "scan", true)
 			return
+	_point_out(w)
 	var best: Dictionary = {}
 	var bd: float = 1e9
 	for e in w.ents:
@@ -344,6 +348,28 @@ func _sensors(w: World) -> void:
 		return
 	act(w, "select", int(best.id))
 	act(w, "scan", true)
+
+func _point_out(w: World) -> void:
+	## the Captain only sees forwards: pin the goal when it's out of the window, and the nearest
+	## threat that's sneaking up from the side or behind
+	if not w.ship.ok("sensors"):
+		return
+	var live: Dictionary = w.pins_live()
+	var m: Mission = w.mission
+	var gp: Variant = m.goal_pos() if m != null else null
+	if gp is Vector2 and not Snapshots.in_window(w, gp) and not live.has(-1) and (gp as Vector2).distance_to(w.ship.pos) < w.radar_range:
+		act(w, "pin", -1)
+		return
+	var near: Dictionary = {}
+	var nd: float = 700.0
+	for e in w.ents:
+		if e.alive and e.hostile and e.ai != "thrown" and not e.latched and not Snapshots.in_window(w, e.pos, float(e.r)):
+			var d: float = e.pos.distance_to(w.ship.pos)
+			if d < nd:
+				nd = d
+				near = e
+	if not near.is_empty() and not live.has(int(near.id)):
+		act(w, "pin", int(near.id))
 
 func _shields(w: World) -> void:
 	var s: Ship = w.ship

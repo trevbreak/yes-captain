@@ -128,7 +128,7 @@ func _ready() -> void:
 	seats_win = crw[0]
 	var cb: VBoxContainer = crw[1]
 	cb.add_theme_constant_override("separation", 8)
-	var tip: Label = UIK.para("Four seats: the Captain and three crew. The Captain sees everything and touches nothing; each crew role works two stations on one screen. Fewer than four of you? Robots take the empty roles.", 18, K.pal("ink_soft"))
+	var tip: Label = UIK.para("Four seats: the Captain and three crew. The Captain looks ahead and touches nothing, the Tech sees all round; each crew role works two stations on one screen. Fewer than four of you? Robots take the empty roles.", 18, K.pal("ink_soft"))
 	cb.add_child(tip)
 	var cards: GridContainer = GridContainer.new()
 	cards.columns = 4
@@ -413,7 +413,7 @@ class SeatCard extends PanelContainer:
 		faces.add_child(pr)
 		var nm: Label = UIK.head(K.role_name(seat).to_upper(), 21, UIK.c(K.role_color(seat)).darkened(0.25), HORIZONTAL_ALIGNMENT_CENTER)
 		v.add_child(nm)
-		var sub: String = "Sees everything. Touches nothing." if seat == "captain" else \
+		var sub: String = "Sees ahead. Touches nothing." if seat == "captain" else \
 			"%s + %s" % [K.seat_name(str(K.role_seats(seat)[0])), K.seat_name(str(K.role_seats(seat)[1]))]
 		v.add_child(UIK.label(sub, 15, K.pal("ink_soft"), HORIZONTAL_ALIGNMENT_CENTER))
 		status = UIK.chip("Open", "cream", "", 13)
