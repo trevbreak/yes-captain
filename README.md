@@ -38,9 +38,10 @@ Built with **Godot 4.7** (GDScript only, Compatibility renderer).
 The fun lives in the gap between two kinds of knowledge:
 
 - **The Captain** has no controls at all. They look straight out of the **bridge window** at eye level: the
-  nose is the middle of the glass, far things grow out of the distance as you close in, and a compass strip runs
-  along the horizon. About 110 degrees wide and 1.3 km deep, but **nothing to the sides or behind** (bar a small close-range ring for things about to bump
-  the hull). Under it, a console for each crew role showing who's at it and what their instruments say, and
+  nose is the middle of the glass, a compass strip runs along the horizon, and things grow out of the distance
+  as the ship closes in (rings to fly through are hollow hoops with chasing lights). About 110 degrees wide and
+  1.3 km deep, but **nothing to the sides or behind**, bar a small close-range ring for things about to bump the
+  hull. Under it, a console for each crew role showing who's at it and what their instruments say, and
   **forecasts** such as *"Reactor overload in 5s"*.
 - **The Tech's radar sees all round, and further.** When something is sneaking up behind, the Tech taps it and
   presses **SHOW CAPTAIN**: a marker appears on the edge of the Captain's window (*"DRONE · 5 o'clock · 400m"*)
@@ -122,8 +123,9 @@ Online rooms open on **the Shift**: three jobs, and rent to make.
 
 - **Jobs are dealt, not written:** a task x a place (rock belt, minefield, fog...) x one or two snags (rush order,
   second-hand ship, Thrupp is watching...). The crew votes on the job board; the Captain picks. Safer jobs pay less.
-- **A director drops trouble in as you fly:** drones (they glow for two seconds, then fire three shots at once), meteors, stray cargo worth a bonus. It waits until the crew
-  is clear of the last lot, so there's time to spot it, say it and do it.
+- **A director drops trouble in as you fly:** drones (they glow for two seconds, then fire three shots at
+  once), meteors, stray cargo worth a bonus. It waits until the crew is clear of the last lot, so there's time
+  to spot it, say it and do it.
 - **Glitches.** The ship stops behaving and nobody is told what: the wheel is on backwards, the compass is drunk,
   the Captain's window turns upside down. The Tech finds the room marked **?!** and reads **IGOR's manual** out
   loud; the fix always needs a crew member in *another* role to do something with their own control while the
