@@ -68,8 +68,9 @@ fi
 	echo '		Referrer-Policy no-referrer'
 	echo '		Permissions-Policy "microphone=(self), camera=(), geolocation=()"'
 	echo '	}'
-	echo '	@page path / /index.html /config.js /voice.js'
-	echo '	header @page Cache-Control "no-cache"'
+	# every file revalidates (cheap 304 via the ETag), so a new build shows up on the next load
+	# instead of browsers keeping a stale index.pck / index.wasm for hours
+	echo '	header Cache-Control "no-cache"'
 	echo '	file_server {'
 	echo '		precompressed br gzip'
 	echo '	}'

@@ -1,7 +1,9 @@
 class_name BridgeWindow
 extends Control
-## The Captain's bridge window: looking out of the front of the ship. About 110 degrees wide and far-sighted
-## (1.3 km), but nothing to the sides or behind. Things further off sit nearer the horizon and look smaller.
+## The Captain's bridge window: looking straight out of the front of the ship, at eye level. About 110 degrees
+## wide and far-sighted (1.3 km), but nothing to the sides or behind. The nose points at the middle of the glass:
+## far things start small near the middle and grow and spread outward as we close in. A compass strip and a nose
+## marker sit on the horizon, so "left of the nose" and "which way is north" read at a glance.
 ## Along the bottom edge, a small close-range ring shows anything within bumping distance, all round.
 ## When the Tech pins something on the radar, a marker on the window's edge says where it is ("DRONE · 5 o'clock
 ## · 400m"): that's the only way the Captain knows about trouble outside the glass.
@@ -13,8 +15,9 @@ var _done_t: Dictionary = {}
 const SPRITE: Dictionary = Chart.SPRITE
 const SKY_TOP: Color = Color("#141024")
 const SKY_LOW: Color = Color("#2b2140")
-const HORIZON: float = 0.30      # where "very far away" sits, as a share of the height
-const NEAR_Y: float = 0.86       # where something at the close ring sits
+const HORIZON: float = 0.48      # eye level: where the nose points, as a share of the height
+const SPREAD: float = 32.0       # how far above or below us things float (m), so they don't all sit on one line
+const HUD: Color = Color("#96f0aa")
 
 func _ready() -> void:
 	if custom_minimum_size == Vector2.ZERO:
@@ -43,16 +46,31 @@ func _half() -> float:
 func _near() -> float:
 	return float(v.get("window", {}).get("near", 140.0))
 
-func project(rel: float, d: float) -> Vector3:
-	## window position (x, y) and size scale (z) of something at bearing `rel` from the nose, `d` metres away.
-	## z < 0: outside the glass
-	var half: float = _half()
-	if absf(rel) > half + 0.02:
+func _hz() -> float:
+	return size.y * HORIZON
+
+func _focal() -> float:
+	return size.x * 0.47 / tan(_half())
+
+func _x(rel: float) -> float:
+	return size.x / 2.0 + tan(rel) * _focal()
+
+static func alt_of(id: int) -> float:
+	## space has no floor: each thing floats at its own height above or below us (fixed per thing), so near things
+	## spread up and down the glass instead of all lying on the horizon
+	var h: int = absi(int(hash(id * 7919 + 13))) % 1000
+	return (float(h) / 1000.0 - 0.5) * 2.0 * SPREAD
+
+func project(rel: float, d: float, alt: float = 0.0) -> Vector3:
+	## eye-level perspective: where something at bearing `rel` from the nose, `d` metres away and `alt` metres above
+	## us shows on the glass (x, y), and how many pixels a metre is there (z). z < 0: not on the glass
+	if absf(rel) > _half() + 0.02:
 		return Vector3(0, 0, -1)
-	var x: float = size.x / 2.0 + tan(rel) / tan(half) * size.x * 0.47
-	var hz: float = size.y * HORIZON
-	var y: float = hz + (size.y * NEAR_Y - hz) * clampf(_near() / maxf(d, 1.0), 0.0, 1.15)
-	return Vector3(x, y, clampf(260.0 / maxf(d, 40.0), 0.12, 3.0))
+	var fwd: float = d * cos(rel)
+	if fwd < 24.0:
+		return Vector3(0, 0, -1)
+	var fl: float = _focal()
+	return Vector3(size.x / 2.0 + fl * d * sin(rel) / fwd, _hz() - fl * alt / fwd, fl / fwd)
 
 func _rel_d(p: Vector2) -> Vector2:
 	var ship: Dictionary = v.get("ship", {})
@@ -64,25 +82,20 @@ func _rel_d(p: Vector2) -> Vector2:
 
 func _draw() -> void:
 	var r: Rect2 = Rect2(Vector2.ZERO, size)
-	# deep space, a little lighter near the horizon
-	var hz: float = size.y * HORIZON
+	# deep space, a little lighter towards the horizon
+	var hz: float = _hz()
 	draw_rect(r, SKY_TOP)
-	for i in 10:
-		var y0: float = hz - 80.0 + i * 28.0
-		draw_rect(Rect2(0, y0, size.x, 30.0), Color(SKY_LOW, 0.12 + 0.05 * (5.0 - absf(i - 5.0))))
+	for i in 12:
+		var y0: float = hz - 165.0 + i * 30.0
+		draw_rect(Rect2(0, y0, size.x, 31.0), Color(SKY_LOW, 0.08 + 0.045 * (6.0 - absf(i - 5.5))))
 	if v.is_empty():
 		return
 	var ship: Dictionary = v.get("ship", {})
 	var hd: float = float(ship.get("heading", -PI / 2.0))
 	var tnow: float = Time.get_ticks_msec() / 1000.0
 	_stars(hd)
-	_dust()
-	# a faint perspective floor of range lines, so distance reads at a glance
+	_dust(float(ship.get("speed", 0.0)))
 	var f: Font = UIK.font("head")
-	for m in [250.0, 500.0, 1000.0]:
-		var q: Vector3 = project(0.0, m)
-		draw_line(Vector2(0, q.y), Vector2(size.x, q.y), Color("#a98fb8", 0.12), 1.5)
-		draw_string(f, Vector2(10, q.y - 4), "%dm" % int(m), HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#a98fb8", 0.45))
 	_heading_tape(hd)
 	# everything out there, far things first
 	var items: Array = []
@@ -102,7 +115,10 @@ func _draw() -> void:
 		pinned[int(pm.id)] = pm
 	for it in items:
 		var rd4: Vector2 = it[3]
-		var q2: Vector3 = project(rd4.x, rd4.y)
+		var alt: float = 0.0
+		if str(it[1]) == "ent" and str(it[2].kind) != "ring":
+			alt = alt_of(int(it[2].id))
+		var q2: Vector3 = project(rd4.x, rd4.y, alt)
 		if q2.z < 0.0:
 			continue
 		var p: Vector2 = Vector2(q2.x, q2.y)
@@ -114,6 +130,7 @@ func _draw() -> void:
 			"goal":
 				_flag(p, q2.z, rd4.y, pinned.has(-1))
 	_fx()
+	_nose()
 	_near_ring(hd, tnow)
 	_pins(tnow)
 	_now_step()
@@ -130,8 +147,11 @@ func _draw() -> void:
 
 func _ent(e: Dictionary, p: Vector2, z: float, d: float, pin: bool, tnow: float) -> void:
 	var kind: String = str(e.kind)
+	if kind == "ring":
+		_gate(e, p, z, tnow)
+		return
 	var tex: Texture2D = _t(SPRITE.get(kind, "obj_unknown"))
-	var px: float = clampf(float(e.r) * 2.6 * z, 16.0, 260.0)
+	var px: float = clampf(float(e.r) * 2.0 * z, 16.0, 300.0)
 	if kind == "unknown":
 		px = clampf(px, 22.0, 70.0)
 	var asp: float = float(tex.get_height()) / float(tex.get_width())
@@ -172,7 +192,7 @@ func _ent(e: Dictionary, p: Vector2, z: float, d: float, pin: bool, tnow: float)
 	_label(p + Vector2(-sz.x / 2.0, sz.y / 2.0 + 16.0), txt, UIK.c("red") if bool(e.hostile) else Color("#ecc983"))
 
 func _shot(s: Dictionary, p: Vector2, z: float) -> void:
-	var rad: float = clampf(6.0 * z, 3.0, 14.0)
+	var rad: float = clampf(2.2 * z, 3.0, 16.0)
 	if s.from == "them":
 		draw_circle(p, rad + 2.0, UIK.ink())
 		draw_circle(p, rad, UIK.c("red"))
@@ -184,7 +204,7 @@ func _shot(s: Dictionary, p: Vector2, z: float) -> void:
 		draw_circle(p, rad * 0.8, UIK.c("teal").lightened(0.4))
 
 func _flag(p: Vector2, z: float, d: float, pin: bool) -> void:
-	var hgt: float = clampf(70.0 * z, 26.0, 90.0)
+	var hgt: float = clampf(30.0 * z, 26.0, 110.0)
 	var bob: float = sin(Time.get_ticks_msec() * 0.006) * 3.0
 	draw_line(p, p + Vector2(0, -hgt), UIK.ink(), 4.0, true)
 	var fl: PackedVector2Array = PackedVector2Array([p + Vector2(0, -hgt), p + Vector2(hgt * 0.65, -hgt * 0.82 + bob), p + Vector2(0, -hgt * 0.62)])
@@ -197,8 +217,17 @@ func _flag(p: Vector2, z: float, d: float, pin: bool) -> void:
 
 func _fx() -> void:
 	for fx in v.get("fx", []):
-		var rd: Vector2 = _rel_d(Vector2(float(fx.x), float(fx.y)))
-		var q: Vector3 = project(rd.x, rd.y)
+		var fp: Vector2 = Vector2(float(fx.x), float(fx.y))
+		var rd: Vector2 = _rel_d(fp)
+		# a puff or a hit belongs to whatever it happened to, at that thing's height
+		var alt: float = 0.0
+		var best: float = 60.0
+		for e in v.get("ents", []):
+			var dd: float = _vec(e.pos).distance_to(fp)
+			if dd < best and str(e.kind) != "ring":
+				best = dd
+				alt = alt_of(int(e.id))
+		var q: Vector3 = project(rd.x, rd.y, alt)
 		if q.z < 0.0:
 			continue
 		var p: Vector2 = Vector2(q.x, q.y)
@@ -206,7 +235,7 @@ func _fx() -> void:
 		var fade: float = clampf(1.0 - age / 0.9, 0.0, 1.0)
 		match str(fx.kind):
 			"puff":
-				var s3: float = clampf(float(fx.get("size", 20.0)) * 3.0 * q.z, 30.0, 200.0) * (0.7 + age)
+				var s3: float = clampf(float(fx.get("size", 20.0)) * 1.3 * q.z, 30.0, 220.0) * (0.7 + age)
 				draw_texture_rect(_t("fx_puff"), Rect2(p - Vector2(s3, s3) / 2.0, Vector2(s3, s3)), false, Color(1, 1, 1, fade))
 			"hit", "star":
 				draw_texture_rect(_t("fx_star"), Rect2(p - Vector2(30, 30), Vector2(60, 60)), false, Color(1, 1, 1, fade))
@@ -270,17 +299,17 @@ func _pins(tnow: float) -> void:
 			continue
 		var rel: float = float(pm.get("rel", 0.0))
 		var d: float = float(pm.get("dist", 0.0))
-		var hz: float = size.y * HORIZON
+		var hz: float = _hz()
 		var at: Vector2
 		var arrow: Vector2
 		if absf(rel) <= half:
 			# ahead but too far to make out: on the horizon
-			at = Vector2(project(rel, 2000.0).x, hz - 30.0)
+			at = Vector2(_x(rel), hz - 64.0)
 			arrow = Vector2(0, -1)
 		else:
 			var side: float = signf(rel)
 			var behind: float = clampf((absf(rel) - half) / (PI - half), 0.0, 1.0)
-			at = Vector2(size.x / 2.0 + side * (size.x / 2.0 - 30.0), lerpf(hz, size.y * 0.78, behind))
+			at = Vector2(size.x / 2.0 + side * (size.x / 2.0 - 30.0), lerpf(hz - 40.0, size.y * 0.78, behind))
 			arrow = Vector2(side, behind * 0.9).normalized()
 		var col: Color = UIK.c("red") if bool(pm.get("hostile", false)) else UIK.c("yellow")
 		if str(pm.get("kind", "")) == "goal":
@@ -315,43 +344,62 @@ func _now_step() -> void:
 			return
 
 func _heading_tape(hd: float) -> void:
-	## compass bearings marked along the horizon: which way is straight ahead
+	## the compass strip on the horizon, painted on the glass like a head-up display: ticks every 5 degrees,
+	## numbers every 15 and the points of the compass every 45, sliding past as we turn
 	var f: Font = UIK.font("head")
+	var hz: float = _hz()
 	var half: float = _half()
-	var hz: float = size.y * HORIZON
-	draw_line(Vector2(0, hz), Vector2(size.x, hz), Color("#ecc983", 0.25), 1.5)
+	draw_line(Vector2(0, hz), Vector2(size.x, hz), Color(HUD, 0.18), 1.5)
 	var names: Dictionary = {0: "N", 45: "NE", 90: "E", 135: "SE", 180: "S", 225: "SW", 270: "W", 315: "NW"}
-	for deg in range(0, 360, 15):
+	for deg in range(0, 360, 5):
 		var rel: float = K.wrap_pi(deg_to_rad(float(deg)) - (hd + PI / 2.0))
 		if absf(rel) > half:
 			continue
-		var x: float = size.x / 2.0 + tan(rel) / tan(half) * size.x * 0.47
-		var major: bool = deg % 45 == 0
-		draw_line(Vector2(x, hz - (8.0 if major else 4.0)), Vector2(x, hz), Color("#ecc983", 0.6), 2.0)
-		if major:
-			var lbl: String = str(names[deg])
-			var lw: float = f.get_string_size(lbl, HORIZONTAL_ALIGNMENT_LEFT, -1, 15).x
-			draw_string(f, Vector2(x - lw / 2.0, hz - 12.0), lbl, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(UIK.c("red") if deg == 0 else Color("#ecc983"), 0.8))
-	# the nose: a little caret dead ahead
-	draw_colored_polygon(PackedVector2Array([Vector2(size.x / 2.0 - 7, hz + 10), Vector2(size.x / 2.0 + 7, hz + 10), Vector2(size.x / 2.0, hz + 2)]), UIK.c("yellow"))
+		var x: float = _x(rel)
+		var edge: float = clampf(1.0 - absf(rel) / half, 0.0, 1.0)
+		var a: float = 0.25 + 0.55 * sqrt(edge)
+		var tick: float = 14.0 if deg % 45 == 0 else (9.0 if deg % 15 == 0 else 5.0)
+		draw_line(Vector2(x, hz - tick), Vector2(x, hz), Color(HUD, a), 2.0)
+		var lbl: String = ""
+		var fs: int = 15
+		if deg % 45 == 0:
+			lbl = str(names[deg])
+			fs = 18
+		elif deg % 15 == 0:
+			lbl = str(deg)
+		if lbl != "":
+			var lw: float = f.get_string_size(lbl, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+			var col: Color = Color(UIK.c("red"), a + 0.15) if deg == 0 else Color(HUD, a)
+			draw_string_outline(f, Vector2(x - lw / 2.0, hz - tick - 6.0), lbl, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 4, Color(UIK.ink(), a * 0.8))
+			draw_string(f, Vector2(x - lw / 2.0, hz - tick - 6.0), lbl, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, col)
+
+func _nose() -> void:
+	## the nose marker: where we are pointing, dead centre of the glass
+	var c: Vector2 = Vector2(size.x / 2.0, _hz())
+	var u: float = clampf(size.y * 0.022, 10.0, 18.0)
+	var pts: PackedVector2Array = PackedVector2Array([c + Vector2(-u * 2.4, 0), c + Vector2(-u, 0), c + Vector2(-u * 0.5, u * 0.75),
+		c, c + Vector2(u * 0.5, u * 0.75), c + Vector2(u, 0), c + Vector2(u * 2.4, 0)])
+	draw_polyline(pts, Color(UIK.ink(), 0.7), 6.0, true)
+	draw_polyline(pts, HUD, 3.0, true)
 
 func _stars(hd: float) -> void:
-	## distant stars, fixed to the sky: they slide sideways as we turn
+	## distant stars, fixed to the sky all round: they slide sideways as we turn
 	var rng: RandomNumberGenerator = RandomNumberGenerator.new()
 	rng.seed = 4242
 	var half: float = _half()
-	var hz: float = size.y * HORIZON
-	for i in 260:
+	var hz: float = _hz()
+	var fl: float = _focal()
+	for i in 300:
 		var a: float = rng.randf() * TAU
-		var el: float = rng.randf_range(-0.9, 1.0)
+		var el: float = rng.randf_range(-0.55, 0.6)
 		var big: bool = rng.randf() < 0.12
 		var rel: float = K.wrap_pi(a - hd)
-		if absf(rel) > half:
+		if absf(rel) > half + 0.05:
 			continue
-		var x: float = size.x / 2.0 + tan(rel) / tan(half) * size.x * 0.47
-		var y: float = hz - el * hz * 0.95
-		if el < 0.0:
-			y = hz - el * (size.y - hz)
+		var x: float = _x(rel)
+		var y: float = hz - fl * tan(el) / cos(rel)
+		if y < 0.0 or y > size.y:
+			continue
 		var tw: float = 0.55 + 0.45 * sin(Time.get_ticks_msec() / 600.0 + i * 1.7)
 		var col: Color = Color("#f2e2c0", (0.8 * tw) if big else 0.35)
 		if big:
@@ -359,31 +407,67 @@ func _stars(hd: float) -> void:
 			draw_line(Vector2(x, y - 4), Vector2(x, y + 4), col, 1.5, true)
 		draw_circle(Vector2(x, y), 1.6 if big else 1.0, col)
 
-func _dust() -> void:
-	## space dust fixed in the world, close by: it streams past as we fly, so speed and turning can be felt
+func _dust(speed: float) -> void:
+	## space dust fixed in the world, close by, above and below us: it streams out from the middle as we fly,
+	## which is what tells you which way you're going (and how fast)
 	var ship: Dictionary = v.get("ship", {})
 	var sp: Vector2 = _vec(ship.get("pos", [0, 0]))
-	var cell: float = 90.0
+	var hd: float = float(ship.get("heading", -PI / 2.0))
+	var back: Vector2 = -Vector2.from_angle(hd) * clampf(speed * 0.14, 0.0, 14.0)
+	var cell: float = 70.0
 	var rng: RandomNumberGenerator = RandomNumberGenerator.new()
-	var reach: int = 5
+	var reach: int = 6
 	var cx: int = int(floor(sp.x / cell))
 	var cy: int = int(floor(sp.y / cell))
 	for gx in range(cx - reach, cx + reach + 1):
 		for gy in range(cy - reach, cy + reach + 1):
 			rng.seed = hash(Vector2i(gx, gy)) + 7
 			var wp: Vector2 = Vector2((gx + rng.randf()) * cell, (gy + rng.randf()) * cell)
-			var ht: float = rng.randf_range(-1.0, 1.0)
+			var alt: float = rng.randf_range(-70.0, 70.0)
 			var rd: Vector2 = _rel_d(wp)
-			if rd.y < 30.0:
+			if rd.y > 420.0:
 				continue
-			var q: Vector3 = project(rd.x, rd.y)
+			var q: Vector3 = project(rd.x, rd.y, alt)
 			if q.z < 0.0:
 				continue
-			# dust floats above and below us, not on a floor: spread it up and down the glass
-			var hz: float = size.y * HORIZON
-			var y: float = hz + (q.y - hz) * ht * 1.6
-			var a: float = clampf(q.z * 0.5, 0.05, 0.5)
-			draw_circle(Vector2(q.x, y), clampf(q.z * 1.2, 0.8, 2.6), Color("#c9b8e8", a))
+			var a: float = clampf(1.0 - rd.y / 420.0, 0.0, 1.0) * 0.6
+			var col: Color = Color("#c9b8e8", a)
+			var rd2: Vector2 = _rel_d(wp + back)
+			var q2: Vector3 = project(rd2.x, rd2.y, alt)
+			if q2.z > 0.0 and speed > 4.0:
+				draw_line(Vector2(q.x, q.y), Vector2(q2.x, q2.y), col, clampf(q.z * 0.6, 1.0, 2.4), true)
+			else:
+				draw_circle(Vector2(q.x, q.y), clampf(q.z * 0.6, 0.8, 2.4), col)
+
+func _gate(e: Dictionary, p: Vector2, z: float, tnow: float) -> void:
+	## a ring to fly through: a hollow metal hoop with chasing lights and a soft glow on the inside edge
+	var rad: float = clampf(float(e.r) * z, 10.0, size.y * 1.4)
+	var done: bool = str(e.note) == "done"
+	var fade: float = 0.0
+	if done:
+		var key: String = "ring%d" % int(e.id)
+		if not _done_t.has(key):
+			_done_t[key] = tnow
+		fade = clampf((tnow - float(_done_t[key]) - 1.5) / 2.0, 0.0, 1.0)
+	var alpha: float = lerpf(0.55, 0.12, fade) if done else 1.0
+	var note: String = str(e.get("note", ""))
+	var metal: Color = Color("#4f78b8")
+	if note in ["red", "yellow", "green", "orange", "purple", "teal", "blue"]:
+		metal = UIK.c(note)
+	if done:
+		metal = UIK.c("green")
+	var th: float = maxf(3.0, rad * 0.15)
+	draw_arc(p, rad * 0.86, 0.0, TAU, 64, Color("#7fe6ff", 0.3 * alpha), th * 0.9, true)
+	draw_arc(p, rad, 0.0, TAU, 64, Color(UIK.ink(), alpha), th + maxf(2.0, th * 0.5), true)
+	draw_arc(p, rad, 0.0, TAU, 64, Color(metal, alpha), th, true)
+	var n: int = 10
+	var lit: int = int(tnow * 8.0)
+	for i in n:
+		var a: float = float(i) / n * TAU - PI / 2.0
+		var on: bool = posmod(lit - i, n) < 3 and not done
+		draw_circle(p + Vector2.from_angle(a) * rad, maxf(1.5, th * 0.32), Color("#fff3a8", alpha) if on else Color("#3a3550", alpha))
+	if done and fade < 1.0:
+		draw_texture_rect(Art.sized("icon_check", 26), Rect2(p - Vector2(13, 13), Vector2(26, 26)), false, Color(UIK.c("green"), 1.0 - fade))
 
 func _label(p: Vector2, text: String, col: Color) -> void:
 	var f: Font = UIK.font("body")

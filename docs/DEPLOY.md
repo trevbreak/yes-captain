@@ -19,7 +19,9 @@ the game at `https://192-168-0-6.<hash>.myunraid.net:8443`. Every other address 
 
 Every push to `main` or `v2-redesign` makes GitHub build `ghcr.io/trevbreak/yes-captain:latest`
 (`.github/workflows/image.yml`: it exports the web game and flies every mission with a robot crew first).
-To update the server afterwards: Docker tab, `yes-captain`, **force update**.
+To update the server afterwards: Docker tab, `yes-captain`, **force update**. Wait for the GitHub build of the
+commit you pushed to finish first, or the server pulls the previous image. Players see the new version on their
+next page load: the server tells browsers to check every file for changes, so no hard refresh is needed.
 
 The package is currently public on GitHub, so the server pulls it without a login. The image contains the
 game's source. To close it, make the package private and run `docker login ghcr.io` on the server with a token.
