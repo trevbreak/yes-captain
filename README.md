@@ -37,8 +37,9 @@ Built with **Godot 4.7** (GDScript only, Compatibility renderer).
 
 The fun lives in the gap between two kinds of knowledge:
 
-- **The Captain** has no controls at all. They look out of the **bridge window**: about 110 degrees wide and
-  1.3 km deep, but **nothing to the sides or behind** (bar a small close-range ring for things about to bump
+- **The Captain** has no controls at all. They look straight out of the **bridge window** at eye level: the
+  nose is the middle of the glass, far things grow out of the distance as you close in, and a compass strip runs
+  along the horizon. About 110 degrees wide and 1.3 km deep, but **nothing to the sides or behind** (bar a small close-range ring for things about to bump
   the hull). Under it, a console for each crew role showing who's at it and what their instruments say, and
   **forecasts** such as *"Reactor overload in 5s"*.
 - **The Tech's radar sees all round, and further.** When something is sneaking up behind, the Tech taps it and
